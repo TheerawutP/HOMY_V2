@@ -285,7 +285,7 @@ void loop() {
 
 
   //parsing read_frame 
-  for(int i = 1; i<slaveNum; i++){
+  for(int i = 1; i<=slaveNum; i++){
     for(int j = 0; j<16; j++) {
         //bit_r[i][j] = (read_frame[i] & (0x0001>>j)) != 0;     
         bit_r[i][j] = ((read_frame[i]>>j) & 0x0001) != 0;
