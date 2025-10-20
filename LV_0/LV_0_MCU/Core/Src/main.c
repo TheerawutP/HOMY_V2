@@ -101,15 +101,34 @@ uint8_t RxData[32];
 //uint8_t TxData[4][];
 uint16_t Data[4][32];
 
-#define RESPONSE_TIMEOUT 50
+#define RESPONSE_TIMEOUT 20
 
+NewSlave CAR_STA = {
+		.slaveID = 0x01,
+		.start_address_readHreg = 0x0001,
+		.num_readHreg = 0x0001,
+		.start_address_writeHreg = 0x0000,
+		.num_writeHreg = 0x0001,
+		.write_data = {100}
+};
+
+NewSlave HALL_STA = {
+		.slaveID = 0x02,
+		.start_address_readHreg = 0x0004,
+		.num_readHreg = 0x0003,
+		.start_address_writeHreg = 0x0000,
+		.num_writeHreg = 0x0004,
+		.write_data = {100}
+};
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
 	int id = RxData[0];
 	int inx = 3;
+	int num = RxData[2];
+	int reg_num = num/2;
 	if(RxData[1] == 0x03){
-		for(int i=0; i<16; i++){
+		for(int i=0; i<reg_num; i++){
 				Data[id][i] = RxData[inx]<<8 | RxData[inx+1];
 				inx = inx+2;
 			}
@@ -117,6 +136,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
 
 }
+
+
 
 void parseEndian(uint16_t val, uint8_t *hi, uint8_t *lo){
      *hi = (val >> 8) & 0xFF;
@@ -443,27 +464,23 @@ void vmodbusTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	NewSlave CAR_STA = {
-			.slaveID = 0x01,
-			.start_address_readHreg = 0x0001,
-			.num_readHreg = 0x0001,
-			.start_address_writeHreg = 0x0000,
-			.num_writeHreg = 0x0001,
-			.write_data = {100}
-	};
-
-
 
 	uint8_t tx_frame[32];
-	uint8_t len = readHreg(&CAR_STA, tx_frame);
+	uint8_t len = 0;
+
+	len = readHreg(&CAR_STA, tx_frame);
 	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
-
-	HAL_Delay(20);
-
+	HAL_Delay(5);
 	len = writeHreg(&CAR_STA, tx_frame);
 	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
+	HAL_Delay(5);
+	len = readHreg(&HALL_STA, tx_frame);
+	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
+	HAL_Delay(5);
+	len = writeHreg(&HALL_STA, tx_frame);
+	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
 
-    osDelay(50);
+    osDelay(10);
   }
   /* USER CODE END vmodbusTask */
 }
@@ -490,7 +507,7 @@ void vprocessTask(void *argument)
 	      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET); // LED OFF
 	  }
 
-    osDelay(20);
+    osDelay(10);
   }
   /* USER CODE END vprocessTask */
 }
