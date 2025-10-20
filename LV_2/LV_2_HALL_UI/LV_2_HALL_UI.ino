@@ -1,7 +1,7 @@
 #include <ModbusRTU.h>
 #include <math.h>
 
-#define SLAVE 3
+#define SLAVE 1
 
 //OUTPUT
 #define PB_DW_LAMP 23
@@ -27,6 +27,8 @@ uint32_t time_print;
 uint32_t last_time_print = 0;
 uint32_t print_interval = 1000;
 
+uint32_t last_time_up, last_time_down = 0;
+uint32_t hold_state = 1000;
 
 uint16_t cbWrite(TRegister* reg, uint16_t val) {
   // if (lastSVal != val) {
@@ -147,14 +149,20 @@ void loop() {
 
   if(UP == 0){
     writeBit(package, 9, 1);
+    last_time_up = millis();
   }else{
-    writeBit(package, 9, 0);
+    if((millis() - last_time_up) >= hold_state){
+      writeBit(package, 9, 0);      
+    }
   }
   
   if(DW == 0){
     writeBit(package, 10, 1);
+    last_time_down = millis();
   }else{
-    writeBit(package, 10, 0);
+    if((millis() - last_time_down) >= hold_state){
+          writeBit(package, 10, 0);
+    }
   }
   
 
