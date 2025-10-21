@@ -1,6 +1,5 @@
 #include <ModbusRTU.h>
 #include <math.h>
-
 #define SLAVE 1
 
 //OUTPUT
@@ -21,10 +20,26 @@
 #define SW_UP 26 //39
 #define SS 27 //34
 
+TaskHandle_t xCallingTaskHandle;
+
+typedef enum {
+    DOOR_CLOSING,
+    DOOR_OPENING,
+    DOOR_CLOSED,
+    DOOR_OPENED,
+    DOOR_LOCK
+}Door_Event_t;
 
 typedef enum {
     CALL_UP,
-    CALL_DW,
+    CALL_DW
+}Button_Event_t;
+
+///////////////////////////////////////////button class//////////////////////////////////////////
+
+typedef enum {
+    CALLING_UP,
+    CALLING_DW,
     SPE
 }BTN_TYPE;
 
@@ -37,24 +52,45 @@ typedef enum {
 typedef struct {
     BTN_TYPE btn_type;
     BTN_STATE btn_state;
+    uint8_t PIN;
 }createButton;
 
 typedef struct {
-    createButton btn;
+    createButton base;
     uint8_t floor_num;
 }createButton_calling;
 
+////////////////////////////////////////////////door class//////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+//------------------------------------------------any objects here-----------------------------------
 createButton_calling up_1 = {
-    {CALL_UP, IDLE},
+    .base = {
+        .btn_type = CALLING_UP, 
+        .btn_state = IDLE, 
+        .PIN = SW_UP
+    },
     floor_num = 1;
 }
+
 createButton_calling dw_3 = {
-    {CALL_DW, IDLE},
+    .base = {
+        .btn_type = CALLING_DW, 
+        .btn_state = IDLE, 
+        .PIN = SW_DW
+    },    
     floor_num = 3;
 } 
-
+//----------------------------------------------------------------------------------------------------
 ModbusRTU RTU_SLAVE;
 //uint16_t lastSVal;
+
+uint16_t package;
+uint16_t up_frame;
+uint16_t dw_frame;
+uint16_t bit_r[16];
+
 uint32_t time_print;
 uint32_t last_time_print = 0;
 uint32_t print_interval = 1000;
@@ -83,6 +119,50 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
     }
 }
 
+void ISR_CALL_UP_1 () {
+  
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+  BaseType_t xTaskNotifyFromISR(
+      xCallingTaskHandle,
+      0x11, 
+      eSetValueWithOverwrite,
+      xHigherPriorityTaskWoken 
+  );
+
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void ISR_CALL_DW_3 () {
+    
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+  BaseType_t xTaskNotifyFromISR(
+      xCallingTaskHandle,
+      0x30, 
+      eSetValueWithOverwrite,
+      xHigherPriorityTaskWoken 
+  );
+
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void ModbusComTask (){
+}
+
+
+void CallingTask(void *pvParam){
+    uint32_t val;
+    for (;;) {
+        if (xTaskNotifyWait(0, 0, &val, portMAX_DELAY) == pdTRUE) {
+            uint16_t floor = (val>>8) & 0xff;
+            uint16_t dir = val & 0x01;
+
+            
+        }
+    }
+}
+
 void setup() {
   Serial.begin(115200);
   Serial2.begin(38400, SERIAL_8E1, 16, 17); // RX=16, TX=17
@@ -98,8 +178,13 @@ void setup() {
   RTU_SLAVE.onSetHreg(0x0001, cbWrite); 
   RTU_SLAVE.onGetHreg(0x0001, cbRead);
 
+  //calling up&dw
   pinMode(SW_DW, INPUT_PULLUP);   
+  attachInterrupt(digitalPinToInterrupt(SW_DW), , FALLING);
+
   pinMode(SW_UP, INPUT_PULLUP);    
+  attachInterrupt(digitalPinToInterrupt(SW_UP), , FALLING);
+
   pinMode(SS, INPUT_PULLUP);    
 
   pinMode(PB_DW_LAMP, OUTPUT);   
@@ -114,7 +199,6 @@ void setup() {
   pinMode(seg_bit_2, OUTPUT);   
   pinMode(seg_bit_3, OUTPUT);   
  
-
 }
   
 void loop() {
@@ -127,7 +211,7 @@ void loop() {
 
   RTU_SLAVE.task();
 
-  ///////////////////////////////////////////////////////extract data from Hreg 0 (written by LV1)//////////////////////////////////////////
+///////////////////////////////////////////////////////extract data from Hreg 0 (written by LV1)//////////////////////////////////////////
 
   uint16_t val = RTU_SLAVE.Hreg(0);
   //car motion dw/up
@@ -200,7 +284,7 @@ void loop() {
     }
   }
   
-  //////////////////////////////////////////////////////////////packing data and displaying/////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////packing data and displaying/////////////////////////////////////////////////////
   RTU_SLAVE.Hreg(1, package);
   if((time_print - last_time_print) >= print_interval){
     last_time_print = time_print;
