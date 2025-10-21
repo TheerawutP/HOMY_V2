@@ -20,7 +20,6 @@
 #include "main.h"
 #include "cmsis_os.h"
 #include "modbus_crc.h"
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -61,21 +60,21 @@ UART_HandleTypeDef huart2;
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 128 * 4,
+  .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for modbusTask */
 osThreadId_t modbusTaskHandle;
 const osThreadAttr_t modbusTask_attributes = {
   .name = "modbusTask",
-  .stack_size = 512 * 4,
+  .stack_size = 2048 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for processTask */
 osThreadId_t processTaskHandle;
 const osThreadAttr_t processTask_attributes = {
   .name = "processTask",
-  .stack_size = 512 * 4,
+  .stack_size = 2048 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */
@@ -99,7 +98,7 @@ void vprocessTask(void *argument);
 /* USER CODE BEGIN 0 */
 uint8_t RxData[32];
 //uint8_t TxData[4][];
-uint16_t Data[4][32];
+volatile uint16_t Data[32][32];
 
 #define RESPONSE_TIMEOUT 20
 
@@ -186,6 +185,7 @@ uint8_t writeHreg(NewSlave *a, uint8_t *frame)
 
 	   return len;
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -468,15 +468,15 @@ void vmodbusTask(void *argument)
 	uint8_t tx_frame[32];
 	uint8_t len = 0;
 
-	len = readHreg(&CAR_STA, tx_frame);
-	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
-	HAL_Delay(5);
-	len = writeHreg(&CAR_STA, tx_frame);
-	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
-	HAL_Delay(5);
+//	len = readHreg(&CAR_STA, tx_frame);
+//	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
+//	osDelay(10);
+//	len = writeHreg(&CAR_STA, tx_frame);
+//	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
+//	osDelay(10);
 	len = readHreg(&HALL_STA, tx_frame);
 	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
-	HAL_Delay(5);
+	osDelay(10);
 	len = writeHreg(&HALL_STA, tx_frame);
 	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
 
