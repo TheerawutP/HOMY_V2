@@ -72,8 +72,8 @@ createButton_calling up_1 = {
         .btn_state = IDLE, 
         .PIN = SW_UP
     },
-    floor_num = 1;
-}
+    .floor_num = 1
+};
 
 createButton_calling dw_3 = {
     .base = {
@@ -81,8 +81,8 @@ createButton_calling dw_3 = {
         .btn_state = IDLE, 
         .PIN = SW_DW
     },    
-    floor_num = 3;
-} 
+    .floor_num = 3
+};
 
 //----------------------------------------------------------------------------------------------------
 ModbusRTU RTU_SLAVE;
@@ -123,22 +123,22 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
 
 void ISR_CALL_UP_1() {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  BaseType_t xTaskNotifyFromISR(
+  xTaskNotifyFromISR(
       xCallingButtonTaskHandle,
       0x11, 
       eSetValueWithOverwrite,
-      xHigherPriorityTaskWoken 
+      &xHigherPriorityTaskWoken 
   );
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 void ISR_CALL_DW_3() {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  BaseType_t xTaskNotifyFromISR(
+  xTaskNotifyFromISR(
       xCallingButtonTaskHandle,
       0x30, 
       eSetValueWithOverwrite,
-      xHigherPriorityTaskWoken 
+      &xHigherPriorityTaskWoken 
   );
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
@@ -204,7 +204,7 @@ void vCallingButtonTask(void *pvParam){
 //   }
 // }
 
-void vProcessTask(){
+void vProcessTask(void *pvParam){
   uint16_t frame[16];
   for(;;){
       if (xQueueReceive(xProcessQueue, &frame, portMAX_DELAY) == pdTRUE) {
@@ -248,10 +248,10 @@ void setup() {
 
   //calling up&dw
   pinMode(SW_DW, INPUT_PULLUP);   
-  attachInterrupt(digitalPinToInterrupt(SW_DW), , FALLING);
+  attachInterrupt(digitalPinToInterrupt(SW_DW), ISR_CALL_UP_1, FALLING);
 
   pinMode(SW_UP, INPUT_PULLUP);    
-  attachInterrupt(digitalPinToInterrupt(SW_UP), , FALLING);
+  attachInterrupt(digitalPinToInterrupt(SW_UP), ISR_CALL_DW_3, FALLING);
 
   pinMode(SS, INPUT_PULLUP);    
 
@@ -277,7 +277,7 @@ void setup() {
     512,                 
     NULL,                
     3,                  
-    xCallingButtonTaskHandle
+    &xCallingButtonTaskHandle
   );
 
 }
