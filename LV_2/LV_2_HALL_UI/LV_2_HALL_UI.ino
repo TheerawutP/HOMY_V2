@@ -121,22 +121,22 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
     }
 }
 
-void ISR_CALL_UP_1() {
+void ISR_CALL_UP() {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   xTaskNotifyFromISR(
       xCallingButtonTaskHandle,
-      0x11, 
+      SW_UP, 
       eSetValueWithOverwrite,
       &xHigherPriorityTaskWoken 
   );
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-void ISR_CALL_DW_3() {
+void ISR_CALL_DW() {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   xTaskNotifyFromISR(
       xCallingButtonTaskHandle,
-      0x30, 
+      SW_DW, 
       eSetValueWithOverwrite,
       &xHigherPriorityTaskWoken 
   );
@@ -174,28 +174,30 @@ void vCallingButtonTask(void *pvParam){
     uint32_t val;
     for (;;) {
         if (xTaskNotifyWait(0, 0, &val, portMAX_DELAY) == pdTRUE) {
-            uint16_t floor = (val>>8) & 0xff;
-            uint16_t dir = val & 0x01;    //0 = dw, 1 = up
+            Serial.println(val);
             
-            if(dir == 1){
-              writeBit(package, 9, 1);
-            }else{
-              writeBit(package, 9, 0);      
-            }
-
-            if(dir == 0){
-              writeBit(package, 10, 1);
-            }else{
-              writeBit(package, 10, 0);      
-            }   
+            switch (val) {
+              case SW_UP:
+                if(digitalRead(SW_UP) == LOW){
+                  writeBit(package, 9, 1);                  
+                }else{
+                  writeBit(package, 9, 0);
+                }
+              
+              case SW_DW:
+                if(digitalRead(SW_DW) == LOW){
+                  writeBit(package, 10, 1);
+                }else{
+                  writeBit(package, 10 ,0);
+                }
 
           RTU_SLAVE.Hreg(1, package);
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+  }
 }
-
 // void vDoorTask(){
 //   if(LCK == 0){
 //     writeBit(package, 8, 1);
@@ -248,10 +250,11 @@ void setup() {
 
   //calling up&dw
   pinMode(SW_DW, INPUT_PULLUP);   
-  attachInterrupt(digitalPinToInterrupt(SW_DW), ISR_CALL_UP_1, FALLING);
+  attachInterrupt(digitalPinToInterrupt(SW_DW), ISR_CALL_DW, CHANGE);
+
 
   pinMode(SW_UP, INPUT_PULLUP);    
-  attachInterrupt(digitalPinToInterrupt(SW_UP), ISR_CALL_DW_3, FALLING);
+  attachInterrupt(digitalPinToInterrupt(SW_UP), ISR_CALL_UP, CHANGE);
 
   pinMode(SS, INPUT_PULLUP);    
 
