@@ -25,8 +25,8 @@ enum ModbusState {
 
 ModbusState currentState = STATE_READ_SS; // Start the cycle immediately
 unsigned long nextActionTime = 0;
-const unsigned long ACTION_INTERVAL = 100;    // Time (ms) to wait between full cycles
-const unsigned long DELAY_BETWEEN_SLAVES = 50; // Short gap (ms) after a transaction finishes
+const unsigned long ACTION_INTERVAL = 20;    // Time (ms) to wait between full cycles
+const unsigned long DELAY_BETWEEN_SLAVES = 20; // Short gap (ms) after a transaction finishes
 
 // --- GLOBAL VARIABLES (Holding data and status) ---
 uint16_t lastSVal = 0; // For HoldregSet callback
