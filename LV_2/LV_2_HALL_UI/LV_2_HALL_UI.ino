@@ -21,6 +21,38 @@
 #define SW_UP 26 //39
 #define SS 27 //34
 
+
+typedef enum {
+    CALL_UP,
+    CALL_DW,
+    SPE
+}BTN_TYPE;
+
+typedef enum {
+    IDLE,
+    PRESSED,
+    RELEASE
+}BTN_STATE;
+
+typedef struct {
+    BTN_TYPE btn_type;
+    BTN_STATE btn_state;
+}createButton;
+
+typedef struct {
+    createButton btn;
+    uint8_t floor_num;
+}createButton_calling;
+
+createButton_calling up_1 = {
+    {CALL_UP, IDLE},
+    floor_num = 1;
+}
+createButton_calling dw_3 = {
+    {CALL_DW, IDLE},
+    floor_num = 3;
+} 
+
 ModbusRTU RTU_SLAVE;
 //uint16_t lastSVal;
 uint32_t time_print;
@@ -28,7 +60,7 @@ uint32_t last_time_print = 0;
 uint32_t print_interval = 1000;
 
 uint32_t last_time_up, last_time_down = 0;
-uint32_t hold_state = 1000;
+uint32_t hold_state = 300;
 
 uint16_t cbWrite(TRegister* reg, uint16_t val) {
   // if (lastSVal != val) {
@@ -86,13 +118,15 @@ void setup() {
 }
   
 void loop() {
+
   time_print = millis();
   uint16_t package;
   uint16_t up_frame;
   uint16_t dw_frame;
   uint16_t bit_r[16];
-  
+
   RTU_SLAVE.task();
+
   ///////////////////////////////////////////////////////extract data from Hreg 0 (written by LV1)//////////////////////////////////////////
 
   uint16_t val = RTU_SLAVE.Hreg(0);
@@ -113,6 +147,7 @@ void loop() {
   bit_r[10] = (val & 0x0400) != 0;            
   bit_r[11] = (val & 0x0800) != 0;            
   bit_r[12] = (val & 0x1000) != 0;   
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   if(bit_r[10] == 1){
@@ -121,11 +156,11 @@ void loop() {
     digitalWrite(HALL_LCK, LOW);
   }
 
-  if(bit_r[11] == 1){
-  }
+  // if(bit_r[11] == 1){
+  // }
 
-  if(bit_r[12] == 1){
-  }
+  // if(bit_r[12] == 1){
+  // }
 
   digitalWrite(DW_LAMP, bit_r[0]);
   digitalWrite(UP_LAMP, bit_r[1]);
@@ -165,7 +200,7 @@ void loop() {
     }
   }
   
-
+  //////////////////////////////////////////////////////////////packing data and displaying/////////////////////////////////////////////////////
   RTU_SLAVE.Hreg(1, package);
   if((time_print - last_time_print) >= print_interval){
     last_time_print = time_print;
