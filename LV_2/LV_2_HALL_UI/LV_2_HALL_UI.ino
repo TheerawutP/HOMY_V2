@@ -262,19 +262,19 @@ void setup() {
   pinMode(DW_LAMP, OUTPUT);   
   pinMode(UP_LAMP, OUTPUT);    
 
-  pinMode(seg_bit_0, OUTPUT);   
-  pinMode(seg_bit_1, OUTPUT);   
-  pinMode(seg_bit_2, OUTPUT);   
-  pinMode(seg_bit_3, OUTPUT);   
+  // pinMode(seg_bit_0, OUTPUT);   
+  // pinMode(seg_bit_1, OUTPUT);   
+  // pinMode(seg_bit_2, OUTPUT);   
+  // pinMode(seg_bit_3, OUTPUT);   
   
   xProcessQueue = xQueueCreate(10, sizeof(parsing_data));
-  xTaskCreate(vProcessTask, "Processing", 512, NULL, 3, NULL);
-  xTaskCreate(vModbusComTask, "ModbusCom", 512, NULL, 3, NULL);
+  xTaskCreate(vProcessTask, "Processing", 1024, NULL, 3, NULL);
+  xTaskCreate(vModbusComTask, "ModbusCom", 1024, NULL, 3, NULL);
   
   xTaskCreate(
     vCallingButtonTask,         
     "Calling",        
-    512,                 
+    1024,                 
     NULL,                
     3,                  
     &xCallingButtonTaskHandle
