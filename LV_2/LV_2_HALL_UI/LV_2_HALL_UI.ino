@@ -20,7 +20,8 @@
 #define SW_UP 26 //39
 #define SS 27 //34
 
-TaskHandle_t xCallingTaskHandle;
+TaskHandle_t xCallingButtonTaskHandle;
+QueueHandle_t xProcessQueue;
 
 typedef enum {
     DOOR_CLOSING,
@@ -82,6 +83,7 @@ createButton_calling dw_3 = {
     },    
     floor_num = 3;
 } 
+
 //----------------------------------------------------------------------------------------------------
 ModbusRTU RTU_SLAVE;
 //uint16_t lastSVal;
@@ -89,7 +91,7 @@ ModbusRTU RTU_SLAVE;
 uint16_t package;
 uint16_t up_frame;
 uint16_t dw_frame;
-uint16_t bit_r[16];
+uint16_t parsing_data[16];
 
 uint32_t time_print;
 uint32_t last_time_print = 0;
@@ -119,49 +121,115 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
     }
 }
 
-void ISR_CALL_UP_1 () {
-  
+void ISR_CALL_UP_1() {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
   BaseType_t xTaskNotifyFromISR(
-      xCallingTaskHandle,
+      xCallingButtonTaskHandle,
       0x11, 
       eSetValueWithOverwrite,
       xHigherPriorityTaskWoken 
   );
-
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-void ISR_CALL_DW_3 () {
-    
+void ISR_CALL_DW_3() {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
   BaseType_t xTaskNotifyFromISR(
-      xCallingTaskHandle,
+      xCallingButtonTaskHandle,
       0x30, 
       eSetValueWithOverwrite,
       xHigherPriorityTaskWoken 
   );
-
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-void ModbusComTask (){
+void vModbusComTask(void *pvParam){
+  for(;;){
+  RTU_SLAVE.task();
+  uint16_t val = RTU_SLAVE.Hreg(0);
+  //car motion dw/up
+  parsing_data[0] = (val & 0x0001) != 0;            
+  parsing_data[1] = (val & 0x0002) != 0; 
+  //car pos in 4-bit
+  parsing_data[2] = (val & 0x0004) != 0;            
+  parsing_data[3] = (val & 0x0008) != 0;            
+  parsing_data[4] = (val & 0x0010) != 0;            
+  parsing_data[5] = (val & 0x0020) != 0;
+  //confirm bits
+  parsing_data[6] = (val & 0x0040) != 0;            
+  parsing_data[7] = (val & 0x0080) != 0;            
+  parsing_data[8] = (val & 0x0100) != 0;            
+  parsing_data[9] = (val & 0x0200) != 0;            
+  //hall lck/op/cl
+  parsing_data[10] = (val & 0x0400) != 0;            
+  parsing_data[11] = (val & 0x0800) != 0;            
+  parsing_data[12] = (val & 0x1000) != 0;   
+
+  xQueueSend(xProcessQueue, &parsing_data, 0);
+  vTaskDelay(pdMS_TO_TICKS(10));
+  }
 }
 
-
-void CallingTask(void *pvParam){
+void vCallingButtonTask(void *pvParam){
     uint32_t val;
     for (;;) {
         if (xTaskNotifyWait(0, 0, &val, portMAX_DELAY) == pdTRUE) {
             uint16_t floor = (val>>8) & 0xff;
-            uint16_t dir = val & 0x01;
-
+            uint16_t dir = val & 0x01;    //0 = dw, 1 = up
             
+            if(dir == 1){
+              writeBit(package, 9, 1);
+            }else{
+              writeBit(package, 9, 0);      
+            }
+
+            if(dir == 0){
+              writeBit(package, 10, 1);
+            }else{
+              writeBit(package, 10, 0);      
+            }   
+
+          RTU_SLAVE.Hreg(1, package);
         }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
+
+// void vDoorTask(){
+//   if(LCK == 0){
+//     writeBit(package, 8, 1);
+//   }else{
+//     writeBit(package, 8, 0);
+//   }
+// }
+
+void vProcessTask(){
+  uint16_t frame[16];
+  for(;;){
+      if (xQueueReceive(xProcessQueue, &frame, portMAX_DELAY) == pdTRUE) {
+          if(frame[10] == 1){
+             digitalWrite(HALL_LCK, HIGH);
+          }else{
+             digitalWrite(HALL_LCK, LOW);
+          }
+       // if(parsing_data[11] == 1){
+       // }
+       // if(parsing_data[12] == 1){
+       // }
+          digitalWrite(DW_LAMP, frame[0]);
+          digitalWrite(UP_LAMP, frame[1]);
+
+          digitalWrite(seg_bit_0, frame[2]);
+          digitalWrite(seg_bit_1, frame[3]);
+          digitalWrite(seg_bit_2, frame[4]);
+          digitalWrite(seg_bit_3, frame[5]);
+      }
+      
+      vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
 
 void setup() {
   Serial.begin(115200);
@@ -198,101 +266,23 @@ void setup() {
   pinMode(seg_bit_1, OUTPUT);   
   pinMode(seg_bit_2, OUTPUT);   
   pinMode(seg_bit_3, OUTPUT);   
- 
+  
+  xProcessQueue = xQueueCreate(10, sizeof(parsing_data));
+  xTaskCreate(vProcessTask, "Processing", 512, NULL, 3, NULL);
+  xTaskCreate(vModbusComTask, "ModbusCom", 512, NULL, 3, NULL);
+  
+  xTaskCreate(
+    vCallingButtonTask,         
+    "Calling",        
+    512,                 
+    NULL,                
+    3,                  
+    xCallingButtonTaskHandle
+  );
+
 }
   
 void loop() {
-
-  time_print = millis();
-  uint16_t package;
-  uint16_t up_frame;
-  uint16_t dw_frame;
-  uint16_t bit_r[16];
-
-  RTU_SLAVE.task();
-
-///////////////////////////////////////////////////////extract data from Hreg 0 (written by LV1)//////////////////////////////////////////
-
-  uint16_t val = RTU_SLAVE.Hreg(0);
-  //car motion dw/up
-  bit_r[0] = (val & 0x0001) != 0;            
-  bit_r[1] = (val & 0x0002) != 0; 
-  //car pos in 4-bit
-  bit_r[2] = (val & 0x0004) != 0;            
-  bit_r[3] = (val & 0x0008) != 0;            
-  bit_r[4] = (val & 0x0010) != 0;            
-  bit_r[5] = (val & 0x0020) != 0;
-  //confirm bits
-  bit_r[6] = (val & 0x0040) != 0;            
-  bit_r[7] = (val & 0x0080) != 0;            
-  bit_r[8] = (val & 0x0100) != 0;            
-  bit_r[9] = (val & 0x0200) != 0;            
-  //hall lck/op/cl
-  bit_r[10] = (val & 0x0400) != 0;            
-  bit_r[11] = (val & 0x0800) != 0;            
-  bit_r[12] = (val & 0x1000) != 0;   
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  if(bit_r[10] == 1){
-    digitalWrite(HALL_LCK, HIGH);
-  }else{
-    digitalWrite(HALL_LCK, LOW);
-  }
-
-  // if(bit_r[11] == 1){
-  // }
-
-  // if(bit_r[12] == 1){
-  // }
-
-  digitalWrite(DW_LAMP, bit_r[0]);
-  digitalWrite(UP_LAMP, bit_r[1]);
-
-  digitalWrite(seg_bit_0, bit_r[2]);
-  digitalWrite(seg_bit_1, bit_r[3]);
-  digitalWrite(seg_bit_2, bit_r[4]);
-  digitalWrite(seg_bit_3, bit_r[5]);
-
-///////////////////////////////////////////////// packing ////////////////////////////////////////////////////////////////////////////////////
-
-  bool UP = digitalRead(SW_UP);
-  bool DW = digitalRead(SW_DW);
-  bool LCK = digitalRead(SS);
-
-  if(LCK == 0){
-    writeBit(package, 8, 1);
-  }else{
-    writeBit(package, 8, 0);
-  }
-
-  if(UP == 0){
-    writeBit(package, 9, 1);
-    last_time_up = millis();
-  }else{
-    if((millis() - last_time_up) >= hold_state){
-      writeBit(package, 9, 0);      
-    }
-  }
-  
-  if(DW == 0){
-    writeBit(package, 10, 1);
-    last_time_down = millis();
-  }else{
-    if((millis() - last_time_down) >= hold_state){
-          writeBit(package, 10, 0);
-    }
-  }
-  
-//////////////////////////////////////////////////////////////packing data and displaying/////////////////////////////////////////////////////
-  RTU_SLAVE.Hreg(1, package);
-  if((time_print - last_time_print) >= print_interval){
-    last_time_print = time_print;
-    Serial.println(" ");
-    Serial.print("Hreg 0: "); Serial.println(RTU_SLAVE.Hreg(0));
-    Serial.print("Hreg 1: "); Serial.println(RTU_SLAVE.Hreg(1));
-    Serial.println(" ");
-  }
 
 }
 
