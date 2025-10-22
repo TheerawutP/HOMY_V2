@@ -117,7 +117,7 @@ NewSlave HALL_STA = {
 		.num_readHreg = 0x0003,
 		.start_address_writeHreg = 0x0000,
 		.num_writeHreg = 0x0004,
-		.write_data = {100}
+		.write_data = {1}
 };
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
@@ -490,9 +490,9 @@ void vmodbusTask(void *argument)
 //	osDelay(10);
 	len = readHreg(&HALL_STA, tx_frame);
 	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
-	osDelay(10);
-	len = writeHreg(&HALL_STA, tx_frame);
-	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
+	//osDelay(10);
+//	len = writeHreg(&HALL_STA, tx_frame);
+//	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
 
     osDelay(10);
   }
@@ -512,15 +512,12 @@ void vprocessTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  if (Data[1][0] > 0)
-	  {
-	      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);  // LED ON
-	  }
-	  else
-	  {
-	      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET); // LED OFF
-	  }
-
+	if(Data[2][1] == 1){
+		uint8_t tx_frame[32];
+		uint8_t len = 0;
+		len = writeHreg(&HALL_STA, tx_frame);
+		HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
+	}
     osDelay(10);
   }
   /* USER CODE END vprocessTask */

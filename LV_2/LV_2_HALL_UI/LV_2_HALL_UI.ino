@@ -23,7 +23,6 @@
 TaskHandle_t xCallingButtonTaskHandle;
 QueueHandle_t xProcessQueue;
 TimerHandle_t xHoldButtonTimer;
-
 typedef enum {
     DOOR_CLOSING,
     DOOR_OPENING,
@@ -88,9 +87,10 @@ createButton_calling dw_3 = {
 //----------------------------------------------------------------------------------------------------
 ModbusRTU RTU_SLAVE;
 //uint16_t lastSVal;
-
+uint32_t response_time;
 uint16_t package;
 uint16_t parsing_data[16];
+bool printed;
 
 uint16_t cbWrite(TRegister* reg, uint16_t val) {
   // if (lastSVal != val) {
@@ -114,6 +114,7 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
 }
 
 void ISR_CALL_UP() {
+
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   xTaskNotifyFromISR(
       xCallingButtonTaskHandle,
@@ -125,6 +126,7 @@ void ISR_CALL_UP() {
 }
 
 void ISR_CALL_DW() {
+
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   xTaskNotifyFromISR(
       xCallingButtonTaskHandle,
@@ -139,6 +141,7 @@ void vModbusComTask(void *pvParam){
   for(;;){
   RTU_SLAVE.task();
   uint16_t val = RTU_SLAVE.Hreg(0);
+
   //car motion dw/up
   parsing_data[0] = (val & 0x0001) != 0;            
   parsing_data[1] = (val & 0x0002) != 0; 
@@ -156,8 +159,9 @@ void vModbusComTask(void *pvParam){
   parsing_data[10] = (val & 0x0400) != 0;            
   parsing_data[11] = (val & 0x0800) != 0;            
   parsing_data[12] = (val & 0x1000) != 0;   
+  
 
-  xQueueSend(xProcessQueue, &parsing_data, 0);
+  xQueueSend(xProcessQueue, parsing_data, 0);
   vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
@@ -173,7 +177,10 @@ void vCallingButtonTask(void *pvParam){
                 if(digitalRead(SW_UP) == LOW){
                   writeBit(package, 9, 1);
                   xTimerStart(xHoldButtonTimer, 0);
+                  //response_time = millis();
                 }
+                RTU_SLAVE.Hreg(1, package);
+                break;
                 //else{
                 //     writeBit(package, 9, 0);
                 //   }
@@ -184,13 +191,13 @@ void vCallingButtonTask(void *pvParam){
                   writeBit(package, 10, 1);
                   xTimerStart(xHoldButtonTimer, 0);
                 }
+                RTU_SLAVE.Hreg(1, package);
+                break;
                 // else{
                 //   writeBit(package, 10, 0);
                 // }
 
-          RTU_SLAVE.Hreg(1, package);
         }
-
         vTaskDelay(pdMS_TO_TICKS(10));
     }
   }
@@ -204,6 +211,12 @@ void vCallingButtonTask(void *pvParam){
 // }
 
 void vHoldButton(TimerHandle_t xTimer) {
+    // if(digitalRead(SW_UP) == HIGH){
+    //   writeBit(package, 9, 0);      
+    // }
+    // if(digitalRead(SW_DW) == HIGH){
+    //   writeBit(package, 10, 0);
+    // }
     writeBit(package, 9, 0);
     writeBit(package, 10, 0);
     RTU_SLAVE.Hreg(1, package);
