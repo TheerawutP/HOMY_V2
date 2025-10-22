@@ -239,10 +239,10 @@ void vProcessTask(void *pvParam){
           digitalWrite(DW_LAMP, frame[0]);
           digitalWrite(UP_LAMP, frame[1]);
 
-          digitalWrite(seg_bit_0, frame[2]);
-          digitalWrite(seg_bit_1, frame[3]);
-          digitalWrite(seg_bit_2, frame[4]);
-          digitalWrite(seg_bit_3, frame[5]);
+          // digitalWrite(seg_bit_0, frame[2]);
+          // digitalWrite(seg_bit_1, frame[3]);
+          // digitalWrite(seg_bit_2, frame[4]);
+          // digitalWrite(seg_bit_3, frame[5]);
       }
       
       vTaskDelay(pdMS_TO_TICKS(10));
@@ -288,14 +288,14 @@ void setup() {
   // pinMode(seg_bit_3, OUTPUT);   
   
   xProcessQueue = xQueueCreate(10, sizeof(parsing_data));
-  xTaskCreate(vProcessTask, "Processing", 1024, NULL, 3, NULL);
-  xTaskCreate(vModbusComTask, "ModbusCom", 1024, NULL, 3, NULL);
+  xTaskCreate(vProcessTask, "Processing", 2048, NULL, 3, NULL);
+  xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
   xHoldButtonTimer = xTimerCreate("Hold_Button", pdMS_TO_TICKS(300), pdFALSE, 0, vHoldButton);
 
   xTaskCreate(
     vCallingButtonTask,         
     "Calling",        
-    1024,                 
+    2048,                 
     NULL,                
     3,                  
     &xCallingButtonTaskHandle
