@@ -22,6 +22,7 @@
 
 TaskHandle_t xCallingButtonTaskHandle;
 QueueHandle_t xProcessQueue;
+TimerHandle_t xHoldButtonTimer;
 
 typedef enum {
     DOOR_CLOSING,
@@ -89,16 +90,7 @@ ModbusRTU RTU_SLAVE;
 //uint16_t lastSVal;
 
 uint16_t package;
-uint16_t up_frame;
-uint16_t dw_frame;
 uint16_t parsing_data[16];
-
-uint32_t time_print;
-uint32_t last_time_print = 0;
-uint32_t print_interval = 1000;
-
-uint32_t last_time_up, last_time_down = 0;
-uint32_t hold_state = 300;
 
 uint16_t cbWrite(TRegister* reg, uint16_t val) {
   // if (lastSVal != val) {
@@ -179,17 +171,22 @@ void vCallingButtonTask(void *pvParam){
             switch (val) {
               case SW_UP:
                 if(digitalRead(SW_UP) == LOW){
-                  writeBit(package, 9, 1);                  
-                }else{
-                  writeBit(package, 9, 0);
+                  writeBit(package, 9, 1);
+                  xTimerStart(xHoldButtonTimer, 0);
                 }
+                //else{
+                //     writeBit(package, 9, 0);
+                //   }
+                // }
               
               case SW_DW:
-                if(digitalRead(SW_DW) == LOW){
+                if(digitalRead(SW_DW) == LOW) {
                   writeBit(package, 10, 1);
-                }else{
-                  writeBit(package, 10 ,0);
+                  xTimerStart(xHoldButtonTimer, 0);
                 }
+                // else{
+                //   writeBit(package, 10, 0);
+                // }
 
           RTU_SLAVE.Hreg(1, package);
         }
@@ -205,6 +202,13 @@ void vCallingButtonTask(void *pvParam){
 //     writeBit(package, 8, 0);
 //   }
 // }
+
+void vHoldButton(TimerHandle_t xTimer) {
+    writeBit(package, 9, 0);
+    writeBit(package, 10, 0);
+    RTU_SLAVE.Hreg(1, package);
+}
+
 
 void vProcessTask(void *pvParam){
   uint16_t frame[16];
@@ -273,7 +277,8 @@ void setup() {
   xProcessQueue = xQueueCreate(10, sizeof(parsing_data));
   xTaskCreate(vProcessTask, "Processing", 1024, NULL, 3, NULL);
   xTaskCreate(vModbusComTask, "ModbusCom", 1024, NULL, 3, NULL);
-  
+  xHoldButtonTimer = xTimerCreate("Hold_Button", pdMS_TO_TICKS(300), pdFALSE, 0, vHoldButton);
+
   xTaskCreate(
     vCallingButtonTask,         
     "Calling",        
