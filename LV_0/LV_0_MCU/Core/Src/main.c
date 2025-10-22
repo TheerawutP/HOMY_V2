@@ -29,8 +29,8 @@
 /* USER CODE BEGIN PTD */
 
 typedef struct{
-	uint8_t slaveID;
 
+	uint8_t slaveID;
 	uint16_t start_address_readHreg;
 	uint16_t num_readHreg;
 	uint16_t start_address_writeHreg;
@@ -67,14 +67,14 @@ const osThreadAttr_t defaultTask_attributes = {
 osThreadId_t modbusTaskHandle;
 const osThreadAttr_t modbusTask_attributes = {
   .name = "modbusTask",
-  .stack_size = 2048 * 4,
+  .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for processTask */
 osThreadId_t processTaskHandle;
 const osThreadAttr_t processTask_attributes = {
   .name = "processTask",
-  .stack_size = 2048 * 4,
+  .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */
@@ -122,6 +122,20 @@ NewSlave HALL_STA = {
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
+
+	if (Size < 5) {
+	        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+	        return;
+	    }
+
+    uint16_t crc_received = RxData[Size - 2] | (RxData[Size - 1] << 8);
+    uint16_t crc_calculated = crc16(RxData, Size - 2);
+
+    if (crc_received != crc_calculated) {
+        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+        return;
+    }
+
 	int id = RxData[0];
 	int inx = 3;
 	int num = RxData[2];
