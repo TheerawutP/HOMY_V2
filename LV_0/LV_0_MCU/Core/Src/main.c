@@ -34,11 +34,19 @@ typedef struct{
 	uint16_t start_address_readHreg;
 	uint16_t num_readHreg;
 	uint16_t start_address_writeHreg;
-
 	uint16_t num_writeHreg;
-	uint16_t write_data[16];
+	//uint16_t write_data[16];
 
 }NewSlave;
+
+typedef enum{
+	CAR,
+	HALL,
+	MQTT,
+	DRIVER
+}current_slave;
+
+current_slave read_state = CAR;
 
 /* USER CODE END PTD */
 
@@ -98,6 +106,7 @@ void vprocessTask(void *argument);
 /* USER CODE BEGIN 0 */
 uint8_t RxData[32];
 //uint8_t TxData[4][];
+uint8_t read_TxFrame[16][32];
 volatile uint16_t Data[32][32];
 
 #define RESPONSE_TIMEOUT 20
@@ -108,7 +117,6 @@ NewSlave CAR_STA = {
 		.num_readHreg = 0x0001,
 		.start_address_writeHreg = 0x0000,
 		.num_writeHreg = 0x0001,
-		.write_data = {100}
 };
 
 NewSlave HALL_STA = {
@@ -117,15 +125,20 @@ NewSlave HALL_STA = {
 		.num_readHreg = 0x0003,
 		.start_address_writeHreg = 0x0000,
 		.num_writeHreg = 0x0004,
-		.write_data = {1}
+};
+NewSlave MQTT_STA = {
+		.slaveID = 0x03,
+		.start_address_readHreg = 0x0000,
+		.num_readHreg = 0x0001,
+		.start_address_writeHreg = 0x0000,
+		.num_writeHreg = 0x0001,
 };
 NewSlave SERVO_DRIVER = {
 		.slaveID = 0x7F,
-		.start_address_readHreg = 0x030C,
+		.start_address_readHreg = 0x0000,
 		.num_readHreg = 0x0001,
-		.start_address_writeHreg = 0x030C,
+		.start_address_writeHreg = 0x0000,
 		.num_writeHreg = 0x0001,
-		.write_data = {1}
 };
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
@@ -165,7 +178,7 @@ void parseEndian(uint16_t val, uint8_t *hi, uint8_t *lo){
      *lo = val & 0xFF;
 }
 
-uint8_t readHreg(NewSlave *a, uint8_t *frame)
+uint8_t read_Hreg(NewSlave *a, uint8_t *frame[32])
 {
 	int len = 0;
 	   frame[len++] = a->slaveID;
@@ -183,8 +196,29 @@ uint8_t readHreg(NewSlave *a, uint8_t *frame)
 	   return len;
 }
 
-uint8_t writeHreg(NewSlave *a, uint8_t *frame)
+uint8_t write_singleHreg(NewSlave *a, uint32_t data, uint8_t *frame)
 {
+
+	int len = 0;
+	   frame[len++] = a->slaveID;
+	   frame[len++] = 0x06;
+
+	   parseEndian(a->start_address_writeHreg, &frame[len], &frame[len+1]);
+	   len+=2;
+
+	   frame[len++] = (data >> 8) & 0xFF;
+	   frame[len++] = data & 0xFF;
+
+	   uint16_t crc = crc16(frame, len);
+	   frame[len++] = crc&0xFF;
+	   frame[len++] = (crc>>8)&0xFF;
+
+	   return len;
+}
+
+uint8_t write_MultipleHreg(NewSlave *a, uint16_t data[16], uint8_t *frame)
+{
+
 	int len = 0;
 	   frame[len++] = a->slaveID;
 	   frame[len++] = 0x10;
@@ -197,8 +231,8 @@ uint8_t writeHreg(NewSlave *a, uint8_t *frame)
 	   frame[len++] = a->num_writeHreg * 2;
 
 	   for (int i = 0; i < a->num_writeHreg; i++) {
-		   frame[len++] = (a->write_data[i] >> 8) & 0xFF;
-		   frame[len++] = a->write_data[i] & 0xFF;
+		   frame[len++] = (data[i] >> 8) & 0xFF;
+		   frame[len++] = data[i] & 0xFF;
 	   }
 
 	   uint16_t crc = crc16(frame, len);
@@ -487,22 +521,33 @@ void vmodbusTask(void *argument)
   for(;;)
   {
 
-	uint8_t tx_frame[32];
-	uint8_t len = 0;
+	uint8_t len;
+	switch (read_state){
+		case CAR:
+			len = read_Hreg(&CAR_STA, &read_TxFrame[0]);
+			HAL_UART_Transmit(&huart1, read_TxFrame[0], len, RESPONSE_TIMEOUT);
+			read_state = HALL;
+			break;
 
-//	len = readHreg(&CAR_STA, tx_frame);
-//	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
-//	osDelay(10);
-//	len = writeHreg(&CAR_STA, tx_frame);
-//	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
-//	osDelay(10);
-	len = writeHreg(&SERVO_DRIVER, tx_frame);
-	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
-	//osDelay(10);
-//	len = writeHreg(&HALL_STA, tx_frame);
-//	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
+		case HALL:
+			len = read_Hreg(&HALL_STA, &read_TxFrame[1]);
+			HAL_UART_Transmit(&huart1, read_TxFrame[1], len, RESPONSE_TIMEOUT);
+			read_state = MQTT;
+			break;
 
-    osDelay(10);
+		case MQTT:
+			read_Hreg(&MQTT_STA, &read_TxFrame[2]);
+			HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
+			read_state = DRIVER;
+			break;
+
+		case DRIVER:
+			read_Hreg(&SERVO_DRIVER, &read_TxFrame[3]);
+			HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
+			read_state = CAR;
+			break;
+		}
+	vTaskDelay(pdMS_TO_TICKS(10));
   }
   /* USER CODE END vmodbusTask */
 }
@@ -520,12 +565,7 @@ void vprocessTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	if(Data[2][1] == 1){
-		uint8_t tx_frame[32];
-		uint8_t len = 0;
-		len = writeHreg(&HALL_STA, tx_frame);
-		HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
-	}
+
     osDelay(10);
   }
   /* USER CODE END vprocessTask */
