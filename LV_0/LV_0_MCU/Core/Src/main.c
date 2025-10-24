@@ -119,6 +119,14 @@ NewSlave HALL_STA = {
 		.num_writeHreg = 0x0004,
 		.write_data = {1}
 };
+NewSlave SERVO_DRIVER = {
+		.slaveID = 0x7F,
+		.start_address_readHreg = 0x030C,
+		.num_readHreg = 0x0001,
+		.start_address_writeHreg = 0x030C,
+		.num_writeHreg = 0x0001,
+		.write_data = {1}
+};
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
@@ -488,7 +496,7 @@ void vmodbusTask(void *argument)
 //	len = writeHreg(&CAR_STA, tx_frame);
 //	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
 //	osDelay(10);
-	len = readHreg(&HALL_STA, tx_frame);
+	len = writeHreg(&SERVO_DRIVER, tx_frame);
 	HAL_UART_Transmit(&huart1, tx_frame, len, RESPONSE_TIMEOUT);
 	//osDelay(10);
 //	len = writeHreg(&HALL_STA, tx_frame);

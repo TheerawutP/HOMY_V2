@@ -159,7 +159,10 @@ void vModbusComTask(void *pvParam){
   parsing_data[10] = (val & 0x0400) != 0;            
   parsing_data[11] = (val & 0x0800) != 0;            
   parsing_data[12] = (val & 0x1000) != 0;   
-  
+  if(parsing_data[10] == 1){
+        Serial.print("response time: ");
+        Serial.println(millis()-response_time);
+  }
 
   xQueueSend(xProcessQueue, parsing_data, 0);
   vTaskDelay(pdMS_TO_TICKS(10));
@@ -177,7 +180,7 @@ void vCallingButtonTask(void *pvParam){
                 if(digitalRead(SW_UP) == LOW){
                   writeBit(package, 9, 1);
                   xTimerStart(xHoldButtonTimer, 0);
-                  //response_time = millis();
+                  response_time = millis();
                 }
                 RTU_SLAVE.Hreg(1, package);
                 break;
