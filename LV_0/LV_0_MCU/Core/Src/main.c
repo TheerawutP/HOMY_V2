@@ -29,6 +29,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+#define FRAME_SIZE 32
 
 typedef struct{
 
@@ -41,6 +42,11 @@ typedef struct{
 
 }NewSlave;
 
+typedef struct{
+    uint8_t data[FRAME_SIZE];
+    uint16_t size;
+}UART_Frame;
+
 typedef enum{
 	CAR,
 	HALL,
@@ -49,7 +55,7 @@ typedef enum{
 }current_slave;
 
 current_slave read_state = CAR;
-#define FRAME_SIZE 32
+
 QueueHandle_t xUartQueue;
 
 /* USER CODE END PTD */
@@ -113,6 +119,8 @@ void vProcessTask(void *argument);
 uint8_t RxData[32];
 //uint8_t TxData[4][];
 uint8_t read_TxFrame[16][32];
+uint8_t read_RxFrame[16][32];
+
 volatile uint16_t Data[32][32];
 
 
@@ -181,15 +189,22 @@ NewSlave SERVO_DRIVER = {
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
 
-	static uint8_t localBuf[FRAME_SIZE];
+	//static uint8_t localBuf[FRAME_SIZE];
+	UART_Frame localBuf;
+	uint16_t crc_received = RxData[Size - 2] | (RxData[Size - 1] << 8);
+	uint16_t crc_calculated = crc16(RxData, Size - 2);
 
-	    if (Size < 5) {
+    if (crc_received != crc_calculated) {
+    		HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+		return;
+    }
+	if (Size < 5) {
 	        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, FRAME_SIZE);
-	        return;
-	    }
-
-	    memcpy(localBuf, RxData, Size);
-	    xQueueSendFromISR(xUartQueue, localBuf, NULL);
+	    return;
+	}
+	localBuf.size = Size;
+	    memcpy(localBuf.data, RxData, Size);
+	    xQueueSendFromISR(xUartQueue, &localBuf, NULL);
 
 	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
 
@@ -274,7 +289,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	xUartQueue = xQueueCreate(32, sizeof(uint8_t));
+	xUartQueue = xQueueCreate(32, sizeof(UART_Frame));
 
   /* USER CODE END 1 */
 
@@ -588,12 +603,21 @@ void vProcessTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-//	uint8_t frameBuf[FRAME_SIZE];
-//    if (xQueueReceive(xUartQueue, frameBuf, portMAX_DELAY) == pdTRUE)
-//    {
-//        parseFrame(frameBuf);
-//    }
-    osDelay(10);
+	UART_Frame frameBuf;
+    if (xQueueReceive(xUartQueue, &frameBuf, portMAX_DELAY) == pdTRUE)
+    {
+
+    		int id = frameBuf.data[0];
+	    	memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
+
+//    		if(frameBuf[1] == 0x03){
+//    			for(int i=0; i<reg_num; i++){
+//    					Data[id][i] = frameBuf[inx]<<8 | frameBuf[inx+1];
+//    					inx = inx+2;
+//    				}
+//    		}
+    }
+	vTaskDelay(pdMS_TO_TICKS(10));
   }
   /* USER CODE END vprocessTask */
 }
