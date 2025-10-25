@@ -20,6 +20,8 @@
 #include "main.h"
 #include "cmsis_os.h"
 #include "modbus_crc.h"
+#include "queue.h"
+#include "string.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -47,6 +49,8 @@ typedef enum{
 }current_slave;
 
 current_slave read_state = CAR;
+#define FRAME_SIZE 32
+QueueHandle_t xUartQueue;
 
 /* USER CODE END PTD */
 
@@ -65,26 +69,28 @@ UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
 /* Definitions for defaultTask */
-osThreadId_t defaultTaskHandle;
-const osThreadAttr_t defaultTask_attributes = {
-  .name = "defaultTask",
+osThreadId_t UART_WriteTaskHandle;
+const osThreadAttr_t UART_WriteTask_attributes = {
+  .name = "UART_WriteTask",
   .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for modbusTask */
-osThreadId_t modbusTaskHandle;
-const osThreadAttr_t modbusTask_attributes = {
-  .name = "modbusTask",
+osThreadId_t UART_ReadTaskHandle;
+const osThreadAttr_t UART_ReadTask_attributes = {
+  .name = "UART_ReadTask",
   .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for processTask */
-osThreadId_t processTaskHandle;
-const osThreadAttr_t processTask_attributes = {
-  .name = "processTask",
+osThreadId_t ProcessTaskHandle;
+const osThreadAttr_t ProcessTask_attributes = {
+  .name = "ProcessTask",
   .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+
+
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -94,9 +100,9 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
-void StartDefaultTask(void *argument);
-void vmodbusTask(void *argument);
-void vprocessTask(void *argument);
+void vUART_WriteTask(void *argument);
+void vUART_ReadTask(void *argument);
+void vProcessTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -108,6 +114,7 @@ uint8_t RxData[32];
 //uint8_t TxData[4][];
 uint8_t read_TxFrame[16][32];
 volatile uint16_t Data[32][32];
+
 
 #define RESPONSE_TIMEOUT 20
 
@@ -141,44 +148,59 @@ NewSlave SERVO_DRIVER = {
 		.num_writeHreg = 0x0001,
 };
 
+//void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+//{
+//
+//	if (Size < 5) {
+//	        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+//	        return;
+//	    }
+//
+//    uint16_t crc_received = RxData[Size - 2] | (RxData[Size - 1] << 8);
+//    uint16_t crc_calculated = crc16(RxData, Size - 2);
+//
+//    if (crc_received != crc_calculated) {
+//        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+//        return;
+//    }
+//
+//	int id = RxData[0];
+//	int inx = 3;
+//	int num = RxData[2];
+//	int reg_num = num/2;
+//	if(RxData[1] == 0x03){
+//		for(int i=0; i<reg_num; i++){
+//				Data[id][i] = RxData[inx]<<8 | RxData[inx+1];
+//				inx = inx+2;
+//			}
+//	}
+//	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+//
+//}
+
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
 
-	if (Size < 5) {
-	        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+	static uint8_t localBuf[FRAME_SIZE];
+
+	    if (Size < 5) {
+	        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, FRAME_SIZE);
 	        return;
 	    }
 
-    uint16_t crc_received = RxData[Size - 2] | (RxData[Size - 1] << 8);
-    uint16_t crc_calculated = crc16(RxData, Size - 2);
+	    memcpy(localBuf, RxData, Size);
+	    xQueueSendFromISR(xUartQueue, localBuf, NULL);
 
-    if (crc_received != crc_calculated) {
-        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
-        return;
-    }
-
-	int id = RxData[0];
-	int inx = 3;
-	int num = RxData[2];
-	int reg_num = num/2;
-	if(RxData[1] == 0x03){
-		for(int i=0; i<reg_num; i++){
-				Data[id][i] = RxData[inx]<<8 | RxData[inx+1];
-				inx = inx+2;
-			}
-	}
 	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
 
 }
-
-
 
 void parseEndian(uint16_t val, uint8_t *hi, uint8_t *lo){
      *hi = (val >> 8) & 0xFF;
      *lo = val & 0xFF;
 }
 
-uint8_t read_Hreg(NewSlave *a, uint8_t *frame[32])
+uint8_t read_Hreg(NewSlave *a, uint8_t *frame)
 {
 	int len = 0;
 	   frame[len++] = a->slaveID;
@@ -252,6 +274,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+	xUartQueue = xQueueCreate(32, sizeof(uint8_t));
 
   /* USER CODE END 1 */
 
@@ -301,13 +324,13 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  UART_WriteTaskHandle = osThreadNew(vUART_WriteTask, NULL, &UART_WriteTask_attributes);
 
   /* creation of modbusTask */
-  modbusTaskHandle = osThreadNew(vmodbusTask, NULL, &modbusTask_attributes);
+  UART_ReadTaskHandle = osThreadNew(vUART_ReadTask, NULL, &UART_ReadTask_attributes);
 
   /* creation of processTask */
-  processTaskHandle = osThreadNew(vprocessTask, NULL, &processTask_attributes);
+  ProcessTaskHandle = osThreadNew(vProcessTask, NULL, &ProcessTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -496,7 +519,7 @@ static void MX_GPIO_Init(void)
   * @retval None
   */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
+void vUART_WriteTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
@@ -514,7 +537,7 @@ void StartDefaultTask(void *argument)
 * @retval None
 */
 /* USER CODE END Header_vmodbusTask */
-void vmodbusTask(void *argument)
+void vUART_ReadTask(void *argument)
 {
   /* USER CODE BEGIN vmodbusTask */
   /* Infinite loop */
@@ -524,25 +547,25 @@ void vmodbusTask(void *argument)
 	uint8_t len;
 	switch (read_state){
 		case CAR:
-			len = read_Hreg(&CAR_STA, &read_TxFrame[0]);
+			len = read_Hreg(&CAR_STA, read_TxFrame[0]);
 			HAL_UART_Transmit(&huart1, read_TxFrame[0], len, RESPONSE_TIMEOUT);
 			read_state = HALL;
 			break;
 
 		case HALL:
-			len = read_Hreg(&HALL_STA, &read_TxFrame[1]);
+			len = read_Hreg(&HALL_STA, read_TxFrame[1]);
 			HAL_UART_Transmit(&huart1, read_TxFrame[1], len, RESPONSE_TIMEOUT);
 			read_state = MQTT;
 			break;
 
 		case MQTT:
-			read_Hreg(&MQTT_STA, &read_TxFrame[2]);
+			read_Hreg(&MQTT_STA, read_TxFrame[2]);
 			HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
 			read_state = DRIVER;
 			break;
 
 		case DRIVER:
-			read_Hreg(&SERVO_DRIVER, &read_TxFrame[3]);
+			read_Hreg(&SERVO_DRIVER, read_TxFrame[3]);
 			HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
 			read_state = CAR;
 			break;
@@ -559,13 +582,17 @@ void vmodbusTask(void *argument)
 * @retval None
 */
 /* USER CODE END Header_vprocessTask */
-void vprocessTask(void *argument)
+void vProcessTask(void *argument)
 {
   /* USER CODE BEGIN vprocessTask */
   /* Infinite loop */
   for(;;)
   {
-
+//	uint8_t frameBuf[FRAME_SIZE];
+//    if (xQueueReceive(xUartQueue, frameBuf, portMAX_DELAY) == pdTRUE)
+//    {
+//        parseFrame(frameBuf);
+//    }
     osDelay(10);
   }
   /* USER CODE END vprocessTask */
