@@ -27,25 +27,25 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   ALLOC
  11 .ARM.attributes 00000030  00000000  00000000  00008090  2**0
                   CONTENTS, READONLY
- 12 .debug_info   0001951e  00000000  00000000  000080c0  2**0
+ 12 .debug_info   000194e5  00000000  00000000  000080c0  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 13 .debug_abbrev 0000370f  00000000  00000000  000215de  2**0
+ 13 .debug_abbrev 000036e2  00000000  00000000  000215a5  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 14 .debug_aranges 00001518  00000000  00000000  00024cf0  2**3
+ 14 .debug_aranges 00001518  00000000  00000000  00024c88  2**3
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 15 .debug_rnglists 0000106c  00000000  00000000  00026208  2**0
+ 15 .debug_rnglists 0000106c  00000000  00000000  000261a0  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 16 .debug_macro  00003411  00000000  00000000  00027274  2**0
+ 16 .debug_macro  00003411  00000000  00000000  0002720c  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_line   00017f87  00000000  00000000  0002a685  2**0
+ 17 .debug_line   00017f85  00000000  00000000  0002a61d  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_str    000db557  00000000  00000000  0004260c  2**0
+ 18 .debug_str    000db557  00000000  00000000  000425a2  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .comment      00000043  00000000  00000000  0011db63  2**0
+ 19 .comment      00000043  00000000  00000000  0011daf9  2**0
                   CONTENTS, READONLY
- 20 .debug_frame  00005bc4  00000000  00000000  0011dba8  2**2
+ 20 .debug_frame  00005bc4  00000000  00000000  0011db3c  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 21 .debug_line_str 0000006c  00000000  00000000  0012376c  2**0
+ 21 .debug_line_str 0000006c  00000000  00000000  00123700  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -370,9 +370,9 @@ Disassembly of section .text:
  800053a:	bf00      	nop
 
 0800053c <HAL_UARTEx_RxEventCallback>:
-//	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
-//
-//}
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
@@ -383,7 +383,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
  8000544:	460b      	mov	r3, r1
  8000546:	807b      	strh	r3, [r7, #2]
 
-	//static uint8_t localBuf[FRAME_SIZE];
 	UART_Frame localBuf;
 	uint16_t crc_received = RxData[Size - 2] | (RxData[Size - 1] << 8);
  8000548:	887b      	ldrh	r3, [r7, #2]
@@ -463,9 +462,9 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
  80005ca:	3730      	adds	r7, #48	@ 0x30
  80005cc:	46bd      	mov	sp, r7
  80005ce:	bd80      	pop	{r7, pc}
- 80005d0:	20000150 	.word	0x20000150
- 80005d4:	200000b4 	.word	0x200000b4
- 80005d8:	200000b0 	.word	0x200000b0
+ 80005d0:	200000b8 	.word	0x200000b8
+ 80005d4:	200004e0 	.word	0x200004e0
+ 80005d8:	200004dc 	.word	0x200004dc
 
 080005dc <parseEndian>:
 
@@ -707,18 +706,18 @@ int main(void)
  8000726:	bf00      	nop
  8000728:	e7fd      	b.n	8000726 <main+0x6a>
  800072a:	bf00      	nop
- 800072c:	200000b0 	.word	0x200000b0
- 8000730:	20000150 	.word	0x20000150
- 8000734:	200000b4 	.word	0x200000b4
+ 800072c:	200004dc 	.word	0x200004dc
+ 8000730:	200000b8 	.word	0x200000b8
+ 8000734:	200004e0 	.word	0x200004e0
  8000738:	080066d4 	.word	0x080066d4
  800073c:	080009c1 	.word	0x080009c1
- 8000740:	20000144 	.word	0x20000144
+ 8000740:	200000ac 	.word	0x200000ac
  8000744:	080066f8 	.word	0x080066f8
  8000748:	080009d1 	.word	0x080009d1
- 800074c:	20000148 	.word	0x20000148
+ 800074c:	200000b0 	.word	0x200000b0
  8000750:	0800671c 	.word	0x0800671c
  8000754:	08000aa9 	.word	0x08000aa9
- 8000758:	2000014c 	.word	0x2000014c
+ 8000758:	200000b4 	.word	0x200000b4
 
 0800075c <SystemClock_Config>:
 /**
@@ -924,7 +923,7 @@ static void MX_USART1_UART_Init(void)
  8000882:	bf00      	nop
  8000884:	bd80      	pop	{r7, pc}
  8000886:	bf00      	nop
- 8000888:	200000b4 	.word	0x200000b4
+ 8000888:	200004e0 	.word	0x200004e0
  800088c:	40011000 	.word	0x40011000
 
 08000890 <MX_USART2_UART_Init>:
@@ -991,7 +990,7 @@ static void MX_USART2_UART_Init(void)
  80008d6:	bf00      	nop
  80008d8:	bd80      	pop	{r7, pc}
  80008da:	bf00      	nop
- 80008dc:	200000fc 	.word	0x200000fc
+ 80008dc:	20000528 	.word	0x20000528
  80008e0:	40004400 	.word	0x40004400
 
 080008e4 <MX_GPIO_Init>:
@@ -1257,15 +1256,15 @@ void vUART_ReadTask(void *argument)
  8000a7a:	f003 fff5 	bl	8004a68 <vTaskDelay>
   {
  8000a7e:	e7ab      	b.n	80009d8 <vUART_ReadTask+0x8>
- 8000a80:	200000ac 	.word	0x200000ac
- 8000a84:	20000170 	.word	0x20000170
+ 8000a80:	200004d8 	.word	0x200004d8
+ 8000a84:	200000d8 	.word	0x200000d8
  8000a88:	20000000 	.word	0x20000000
- 8000a8c:	200000b4 	.word	0x200000b4
- 8000a90:	20000190 	.word	0x20000190
+ 8000a8c:	200004e0 	.word	0x200004e0
+ 8000a90:	200000f8 	.word	0x200000f8
  8000a94:	2000000c 	.word	0x2000000c
- 8000a98:	200001b0 	.word	0x200001b0
+ 8000a98:	20000118 	.word	0x20000118
  8000a9c:	20000018 	.word	0x20000018
- 8000aa0:	200001d0 	.word	0x200001d0
+ 8000aa0:	20000138 	.word	0x20000138
  8000aa4:	20000024 	.word	0x20000024
 
 08000aa8 <vProcessTask>:
@@ -1293,13 +1292,12 @@ void vProcessTask(void *argument)
  8000abe:	f003 fbc5 	bl	800424c <xQueueReceive>
  8000ac2:	4603      	mov	r3, r0
  8000ac4:	2b01      	cmp	r3, #1
- 8000ac6:	d10b      	bne.n	8000ae0 <vProcessTask+0x38>
+ 8000ac6:	d1f3      	bne.n	8000ab0 <vProcessTask+0x8>
     {
-
-    		int id = frameBuf.data[0];
+    	int id = frameBuf.data[0];
  8000ac8:	7a3b      	ldrb	r3, [r7, #8]
  8000aca:	62fb      	str	r3, [r7, #44]	@ 0x2c
-	    	memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
+	    memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
  8000acc:	6afb      	ldr	r3, [r7, #44]	@ 0x2c
  8000ace:	015b      	lsls	r3, r3, #5
  8000ad0:	4a06      	ldr	r2, [pc, #24]	@ (8000aec <vProcessTask+0x44>)
@@ -1308,18 +1306,15 @@ void vProcessTask(void *argument)
  8000ad6:	f107 0108 	add.w	r1, r7, #8
  8000ada:	4618      	mov	r0, r3
  8000adc:	f005 fd68 	bl	80065b0 <memcpy>
-//    					Data[id][i] = frameBuf[inx]<<8 | frameBuf[inx+1];
-//    					inx = inx+2;
-//    				}
-//    		}
-    }
+
+
 	vTaskDelay(pdMS_TO_TICKS(10));
  8000ae0:	200a      	movs	r0, #10
  8000ae2:	f003 ffc1 	bl	8004a68 <vTaskDelay>
   {
  8000ae6:	e7e3      	b.n	8000ab0 <vProcessTask+0x8>
- 8000ae8:	200000b0 	.word	0x200000b0
- 8000aec:	20000370 	.word	0x20000370
+ 8000ae8:	200004dc 	.word	0x200004dc
+ 8000aec:	200002d8 	.word	0x200002d8
 
 08000af0 <HAL_TIM_PeriodElapsedCallback>:
   * a global variable "uwTick" used as application time base.
@@ -1977,7 +1972,7 @@ void USART1_IRQHandler(void)
  8000e2a:	bf00      	nop
  8000e2c:	bd80      	pop	{r7, pc}
  8000e2e:	bf00      	nop
- 8000e30:	200000b4 	.word	0x200000b4
+ 8000e30:	200004e0 	.word	0x200004e0
 
 08000e34 <TIM6_DAC_IRQHandler>:
 

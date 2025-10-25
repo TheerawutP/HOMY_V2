@@ -19,31 +19,25 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
 #include "modbus_crc.h"
 #include "queue.h"
 #include "string.h"
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-#define FRAME_SIZE 32
-
 typedef struct{
-
 	uint8_t slaveID;
 	uint16_t start_address_readHreg;
 	uint16_t num_readHreg;
 	uint16_t start_address_writeHreg;
 	uint16_t num_writeHreg;
-	//uint16_t write_data[16];
-
 }NewSlave;
 
 typedef struct{
-    uint8_t data[FRAME_SIZE];
+    uint8_t data[32];
     uint16_t size;
 }UART_Frame;
 
@@ -53,78 +47,6 @@ typedef enum{
 	MQTT,
 	DRIVER
 }current_slave;
-
-current_slave read_state = CAR;
-
-QueueHandle_t xUartQueue;
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
-UART_HandleTypeDef huart1;
-UART_HandleTypeDef huart2;
-
-/* Definitions for defaultTask */
-osThreadId_t UART_WriteTaskHandle;
-const osThreadAttr_t UART_WriteTask_attributes = {
-  .name = "UART_WriteTask",
-  .stack_size = 1024 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for modbusTask */
-osThreadId_t UART_ReadTaskHandle;
-const osThreadAttr_t UART_ReadTask_attributes = {
-  .name = "UART_ReadTask",
-  .stack_size = 1024 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for processTask */
-osThreadId_t ProcessTaskHandle;
-const osThreadAttr_t ProcessTask_attributes = {
-  .name = "ProcessTask",
-  .stack_size = 1024 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-
-
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
-void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
-static void MX_USART1_UART_Init(void);
-void vUART_WriteTask(void *argument);
-void vUART_ReadTask(void *argument);
-void vProcessTask(void *argument);
-
-/* USER CODE BEGIN PFP */
-
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-uint8_t RxData[32];
-//uint8_t TxData[4][];
-uint8_t read_TxFrame[16][32];
-uint8_t read_RxFrame[16][32];
-
-volatile uint16_t Data[32][32];
-
-
-#define RESPONSE_TIMEOUT 20
 
 NewSlave CAR_STA = {
 		.slaveID = 0x01,
@@ -156,40 +78,74 @@ NewSlave SERVO_DRIVER = {
 		.num_writeHreg = 0x0001,
 };
 
-//void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
-//{
-//
-//	if (Size < 5) {
-//	        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
-//	        return;
-//	    }
-//
-//    uint16_t crc_received = RxData[Size - 2] | (RxData[Size - 1] << 8);
-//    uint16_t crc_calculated = crc16(RxData, Size - 2);
-//
-//    if (crc_received != crc_calculated) {
-//        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
-//        return;
-//    }
-//
-//	int id = RxData[0];
-//	int inx = 3;
-//	int num = RxData[2];
-//	int reg_num = num/2;
-//	if(RxData[1] == 0x03){
-//		for(int i=0; i<reg_num; i++){
-//				Data[id][i] = RxData[inx]<<8 | RxData[inx+1];
-//				inx = inx+2;
-//			}
-//	}
-//	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
-//
-//}
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+#define FRAME_SIZE 32
+#define RESPONSE_TIMEOUT 20
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+
+/* Definitions for defaultTask */
+osThreadId_t UART_WriteTaskHandle;
+const osThreadAttr_t UART_WriteTask_attributes = {
+  .name = "UART_WriteTask",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for modbusTask */
+osThreadId_t UART_ReadTaskHandle;
+const osThreadAttr_t UART_ReadTask_attributes = {
+  .name = "UART_ReadTask",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for processTask */
+osThreadId_t ProcessTaskHandle;
+const osThreadAttr_t ProcessTask_attributes = {
+  .name = "ProcessTask",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+
+
+/* USER CODE BEGIN PV */
+uint8_t RxData[32];
+uint8_t read_TxFrame[16][32];
+uint8_t read_RxFrame[16][32];
+
+current_slave read_state = CAR;
+QueueHandle_t xUartQueue;
+UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_USART2_UART_Init(void);
+static void MX_USART1_UART_Init(void);
+void vUART_WriteTask(void *argument);
+void vUART_ReadTask(void *argument);
+void vProcessTask(void *argument);
+
+/* USER CODE BEGIN PFP */
+
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
 
-	//static uint8_t localBuf[FRAME_SIZE];
 	UART_Frame localBuf;
 	uint16_t crc_received = RxData[Size - 2] | (RxData[Size - 1] << 8);
 	uint16_t crc_calculated = crc16(RxData, Size - 2);
@@ -606,22 +562,15 @@ void vProcessTask(void *argument)
 	UART_Frame frameBuf;
     if (xQueueReceive(xUartQueue, &frameBuf, portMAX_DELAY) == pdTRUE)
     {
+    	int id = frameBuf.data[0];
+	    memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
 
-    		int id = frameBuf.data[0];
-	    	memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
 
-//    		if(frameBuf[1] == 0x03){
-//    			for(int i=0; i<reg_num; i++){
-//    					Data[id][i] = frameBuf[inx]<<8 | frameBuf[inx+1];
-//    					inx = inx+2;
-//    				}
-//    		}
-    }
 	vTaskDelay(pdMS_TO_TICKS(10));
   }
   /* USER CODE END vprocessTask */
+  }
 }
-
 /**
   * @brief  Period elapsed callback in non blocking mode
   * @note   This function is called  when TIM6 interrupt took place, inside
