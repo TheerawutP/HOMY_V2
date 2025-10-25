@@ -87,10 +87,8 @@ createButton_calling dw_3 = {
 //----------------------------------------------------------------------------------------------------
 ModbusRTU RTU_SLAVE;
 //uint16_t lastSVal;
-uint32_t response_time;
 uint16_t package;
 uint16_t parsing_data[16];
-bool printed;
 
 uint16_t cbWrite(TRegister* reg, uint16_t val) {
   // if (lastSVal != val) {
@@ -159,10 +157,10 @@ void vModbusComTask(void *pvParam){
   parsing_data[10] = (val & 0x0400) != 0;            
   parsing_data[11] = (val & 0x0800) != 0;            
   parsing_data[12] = (val & 0x1000) != 0;   
-  if(parsing_data[10] == 1){
-        Serial.print("response time: ");
-        Serial.println(millis()-response_time);
-  }
+  // if(parsing_data[10] == 1){
+  //       Serial.print("response time: ");
+  //       Serial.println(millis()-response_time);
+  // }
 
   xQueueSend(xProcessQueue, parsing_data, 0);
   vTaskDelay(pdMS_TO_TICKS(10));
@@ -173,38 +171,54 @@ void vCallingButtonTask(void *pvParam){
     uint32_t val;
     for (;;) {
         if (xTaskNotifyWait(0, 0, &val, portMAX_DELAY) == pdTRUE) {
-            Serial.println(val);
             
-            switch (val) {
-              case SW_UP:
-                if(digitalRead(SW_UP) == LOW){
-                  writeBit(package, 9, 1);
-                  xTimerStart(xHoldButtonTimer, 0);
-                  response_time = millis();
-                }
-                RTU_SLAVE.Hreg(1, package);
-                break;
-                //else{
-                //     writeBit(package, 9, 0);
-                //   }
-                // }
+            // switch (val) {
+            //   case SW_UP:
+            //     if(digitalRead(SW_UP) == LOW){
+            //       writeBit(package, 9, 1);
+            //       xTimerStart(xHoldButtonTimer, 0);
+            //     }
+            //     RTU_SLAVE.Hreg(1, package);
+            //     break;
+
               
-              case SW_DW:
-                if(digitalRead(SW_DW) == LOW) {
-                  writeBit(package, 10, 1);
-                  xTimerStart(xHoldButtonTimer, 0);
+            //   case SW_DW:
+            //     if(digitalRead(SW_DW) == LOW) {
+            //       writeBit(package, 10, 1);
+            //       xTimerStart(xHoldButtonTimer, 0);
+            //     }
+            //     RTU_SLAVE.Hreg(1, package);
+            //     break;
+            if (val == SW_UP) {
+                // Keep setting bit as long as button is pressed
+                while(digitalRead(SW_UP) == LOW) {
+                    writeBit(package, 9, 1);
+                    RTU_SLAVE.Hreg(1, package);
+                    vTaskDelay(pdMS_TO_TICKS(50)); // Poll every 50ms
                 }
+                // Button released, clear bit
+                writeBit(package, 9, 0);
                 RTU_SLAVE.Hreg(1, package);
-                break;
-                // else{
-                //   writeBit(package, 10, 0);
-                // }
+            }
+            
+            if (val == SW_DW) {
+                // Keep setting bit as long as button is pressed
+                while(digitalRead(SW_DW) == LOW) {
+                    writeBit(package, 10, 1);
+                    RTU_SLAVE.Hreg(1, package);
+                    vTaskDelay(pdMS_TO_TICKS(50)); // Poll every 50ms
+                }
+                // Button released, clear bit
+                writeBit(package, 10, 0);
+                RTU_SLAVE.Hreg(1, package);
+            }
+
 
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-  }
 }
+
 // void vDoorTask(){
 //   if(LCK == 0){
 //     writeBit(package, 8, 1);
@@ -252,7 +266,6 @@ void vProcessTask(void *pvParam){
   }
 }
 
-
 void setup() {
   Serial.begin(115200);
   Serial2.begin(38400, SERIAL_8E1, 16, 17); // RX=16, TX=17
@@ -291,14 +304,14 @@ void setup() {
   // pinMode(seg_bit_3, OUTPUT);   
   
   xProcessQueue = xQueueCreate(10, sizeof(parsing_data));
-  xTaskCreate(vProcessTask, "Processing", 2048, NULL, 3, NULL);
+  xTaskCreate(vProcessTask, "Processing", 1024, NULL, 3, NULL);
   xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
-  xHoldButtonTimer = xTimerCreate("Hold_Button", pdMS_TO_TICKS(300), pdFALSE, 0, vHoldButton);
+  xHoldButtonTimer = xTimerCreate("Hold_Button", pdMS_TO_TICKS(500), pdFALSE, 0, vHoldButton);
 
   xTaskCreate(
     vCallingButtonTask,         
     "Calling",        
-    2048,                 
+    1024,                 
     NULL,                
     3,                  
     &xCallingButtonTaskHandle
