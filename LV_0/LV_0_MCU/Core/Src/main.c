@@ -310,7 +310,9 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
   xUART_QueueHandle = xQueueCreate(32, sizeof(UART_Frame));
-  xServe_QueueHandle = xQueueCreate(32, sizeof(SERVE_QUEUE));
+  xServe_QueueHandle = xQueueCreate(32, sizeof(transitReq));
+  xQueueMutex = xSemaphoreCreateMutex();
+  xQueueSem = xSemaphoreCreateBinary();
 
   /* USER CODE END 1 */
 
@@ -603,7 +605,6 @@ void vServeQueue(void *argument)
 		            xSemaphoreGive(xQueueMutex);
 				}
 		    }
-        vTaskDelay(pdMS_TO_TICKS(20));
   }
   /* USER CODE END vServeQueue */
 }
@@ -619,15 +620,17 @@ void vTransit(void *argument)
 {
   /* USER CODE BEGIN vTransit */
   /* Infinite loop */
+  transitReq request;
   for(;;)
   {
-
-//	if(xTasknotify(startTransit, val, overwrite)){
-//		if(limit_sw[i].state != 0){
-//			servo.rotate(speed, dir);
-//		}
-//	}
-	osDelay(1);
+	  if(xSemaphoreTake(xQueueSem, portMAX_DELAY) == pdTRUE){
+		  if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
+			  if(dequeue(&request)){
+				  //do task
+			  }
+              xSemaphoreGive(xQueueMutex);
+		  }
+	  }
   }
   /* USER CODE END vTransit */
 }
