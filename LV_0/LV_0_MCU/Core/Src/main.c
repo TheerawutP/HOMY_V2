@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "modbus_crc.h"
 #include "queue.h"
+#include "semphr.h"
 #include "string.h"
 /* USER CODE END Includes */
 
@@ -48,6 +49,29 @@ typedef enum{
 	MQTT,
 	DRIVER
 }current_slave;
+
+typedef enum{
+	HALL_UI,
+	CABIN
+}call_by;
+
+typedef enum{
+	UP,
+	DOWN
+}direction;
+
+typedef struct{
+	uint8_t from;
+	uint8_t dest;
+	direction dir;
+	call_by requestBy;
+}transitReq;
+
+typedef struct{
+	transitReq request[32];
+	uint8_t front;
+	uint8_t rear;
+}SERVE_QUEUE;
 
 NewSlave CAR_STA = {
 		.slaveID = 0x01,
@@ -79,12 +103,15 @@ NewSlave SERVO_DRIVER = {
 		.num_writeHreg = 0x0001,
 };
 
+SERVE_QUEUE transit_queue;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define FRAME_SIZE 32
 #define RESPONSE_TIMEOUT 20
+#define QUEUE_SIZE 32
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -95,7 +122,10 @@ NewSlave SERVO_DRIVER = {
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
-QueueHandle_t UART_QueueHandle;
+QueueHandle_t xUART_QueueHandle;
+QueueHandle_t xServe_QueueHandle;
+SemaphoreHandle_t xQueueSem;
+SemaphoreHandle_t xQueueMutex;
 
 /* Definitions for ProcessTask */
 osThreadId_t ProcessTaskHandle;
@@ -176,7 +206,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 	}
 	localBuf.size = Size;
 	    memcpy(localBuf.data, RxData, Size);
-	    xQueueSendFromISR(UART_QueueHandle, &localBuf, NULL);
+	    xQueueSendFromISR(xUART_QueueHandle, &localBuf, NULL);
 
 	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
 
@@ -251,6 +281,24 @@ uint8_t write_MultipleHreg(NewSlave *a, uint16_t data[16], uint8_t *frame)
 	   return len;
 }
 
+int enqueue(transitReq task) {
+    int next = (transit_queue.rear + 1) % QUEUE_SIZE;
+
+    if(next == transit_queue.front) return 0;
+
+    transit_queue.request[transit_queue.rear] = task;
+    transit_queue.rear = next;
+    return 1;
+}
+
+// ดึงค่าออก queue (dequeue)
+int dequeue(transitReq *task) {
+    if(transit_queue.front == transit_queue.rear) return 0;
+
+    *task = transit_queue.request[transit_queue.front];
+    transit_queue.front = (transit_queue.front + 1) % QUEUE_SIZE;
+    return 1;
+}
 /* USER CODE END 0 */
 
 /**
@@ -261,7 +309,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  UART_QueueHandle = xQueueCreate(32, sizeof(UART_Frame));
+  xUART_QueueHandle = xQueueCreate(32, sizeof(UART_Frame));
+  xServe_QueueHandle = xQueueCreate(32, sizeof(SERVE_QUEUE));
 
   /* USER CODE END 1 */
 
@@ -519,7 +568,7 @@ void vProcess(void *argument)
   for(;;)
   {
 		UART_Frame frameBuf;
-		if (xQueueReceive(UART_QueueHandle, &frameBuf, portMAX_DELAY) == pdTRUE)
+		if (xQueueReceive(xUART_QueueHandle, &frameBuf, portMAX_DELAY) == pdTRUE)
 		    {
 		    	int id = frameBuf.data[0];
 			    memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
@@ -541,9 +590,20 @@ void vServeQueue(void *argument)
 {
   /* USER CODE BEGIN vServeQueue */
   /* Infinite loop */
+  transitReq request;
   for(;;)
   {
-    osDelay(1);
+	  //order = { from hall1 2  3  or car, dest}
+		if (xQueueReceive(xServe_QueueHandle, &request, portMAX_DELAY) == pdTRUE)
+		    {
+				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
+					if(enqueue(request)){
+		                xSemaphoreGive(xQueueSem);
+					}
+		            xSemaphoreGive(xQueueMutex);
+				}
+		    }
+        vTaskDelay(pdMS_TO_TICKS(20));
   }
   /* USER CODE END vServeQueue */
 }
@@ -561,7 +621,13 @@ void vTransit(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+
+//	if(xTasknotify(startTransit, val, overwrite)){
+//		if(limit_sw[i].state != 0){
+//			servo.rotate(speed, dir);
+//		}
+//	}
+	osDelay(1);
   }
   /* USER CODE END vTransit */
 }
