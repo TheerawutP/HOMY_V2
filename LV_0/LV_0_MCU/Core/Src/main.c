@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "modbus_crc.h"
@@ -92,39 +93,52 @@ NewSlave SERVO_DRIVER = {
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
+QueueHandle_t UART_QueueHandle;
 
-/* Definitions for defaultTask */
-osThreadId_t UART_WriteTaskHandle;
-const osThreadAttr_t UART_WriteTask_attributes = {
-  .name = "UART_WriteTask",
-  .stack_size = 1024 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for modbusTask */
-osThreadId_t UART_ReadTaskHandle;
-const osThreadAttr_t UART_ReadTask_attributes = {
-  .name = "UART_ReadTask",
-  .stack_size = 1024 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for processTask */
+/* Definitions for ProcessTask */
 osThreadId_t ProcessTaskHandle;
 const osThreadAttr_t ProcessTask_attributes = {
   .name = "ProcessTask",
-  .stack_size = 1024 * 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-
-
+/* Definitions for ServeQueueTask */
+osThreadId_t ServeQueueTaskHandle;
+const osThreadAttr_t ServeQueueTask_attributes = {
+  .name = "ServeQueueTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for TransitTask */
+osThreadId_t TransitTaskHandle;
+const osThreadAttr_t TransitTask_attributes = {
+  .name = "TransitTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for UART_WriteTask */
+osThreadId_t UART_WriteTaskHandle;
+const osThreadAttr_t UART_WriteTask_attributes = {
+  .name = "UART_WriteTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for UART_ReadTask */
+osThreadId_t UART_ReadTaskHandle;
+const osThreadAttr_t UART_ReadTask_attributes = {
+  .name = "UART_ReadTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* USER CODE BEGIN PV */
 uint8_t RxData[32];
 uint8_t read_TxFrame[16][32];
 uint8_t read_RxFrame[16][32];
 
 current_slave read_state = CAR;
-QueueHandle_t xUartQueue;
-UART_HandleTypeDef huart1;
-UART_HandleTypeDef huart2;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -132,9 +146,11 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
-void vUART_WriteTask(void *argument);
-void vUART_ReadTask(void *argument);
-void vProcessTask(void *argument);
+void vProcess(void *argument);
+void vServeQueue(void *argument);
+void vTransit(void *argument);
+void vUART_Write(void *argument);
+void vUART_Read(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -160,7 +176,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 	}
 	localBuf.size = Size;
 	    memcpy(localBuf.data, RxData, Size);
-	    xQueueSendFromISR(xUartQueue, &localBuf, NULL);
+	    xQueueSendFromISR(UART_QueueHandle, &localBuf, NULL);
 
 	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
 
@@ -245,7 +261,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	xUartQueue = xQueueCreate(32, sizeof(UART_Frame));
+  UART_QueueHandle = xQueueCreate(32, sizeof(UART_Frame));
 
   /* USER CODE END 1 */
 
@@ -270,7 +286,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+  HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
   /* USER CODE END 2 */
 
@@ -294,14 +310,20 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of defaultTask */
-  UART_WriteTaskHandle = osThreadNew(vUART_WriteTask, NULL, &UART_WriteTask_attributes);
+  /* creation of ProcessTask */
+  ProcessTaskHandle = osThreadNew(vProcess, NULL, &ProcessTask_attributes);
 
-  /* creation of modbusTask */
-  UART_ReadTaskHandle = osThreadNew(vUART_ReadTask, NULL, &UART_ReadTask_attributes);
+  /* creation of ServeQueueTask */
+  ServeQueueTaskHandle = osThreadNew(vServeQueue, NULL, &ServeQueueTask_attributes);
 
-  /* creation of processTask */
-  ProcessTaskHandle = osThreadNew(vProcessTask, NULL, &ProcessTask_attributes);
+  /* creation of TransitTask */
+  TransitTaskHandle = osThreadNew(vTransit, NULL, &TransitTask_attributes);
+
+  /* creation of UART_WriteTask */
+  UART_WriteTaskHandle = osThreadNew(vUART_Write, NULL, &UART_WriteTask_attributes);
+
+  /* creation of UART_ReadTask */
+  UART_ReadTaskHandle = osThreadNew(vUART_Read, NULL, &UART_ReadTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -483,94 +505,130 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartDefaultTask */
+/* USER CODE BEGIN Header_vProcess */
 /**
-  * @brief  Function implementing the defaultTask thread.
+  * @brief  Function implementing the ProcessTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartDefaultTask */
-void vUART_WriteTask(void *argument)
+/* USER CODE END Header_vProcess */
+void vProcess(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+		UART_Frame frameBuf;
+		if (xQueueReceive(UART_QueueHandle, &frameBuf, portMAX_DELAY) == pdTRUE)
+		    {
+		    	int id = frameBuf.data[0];
+			    memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
+
+		    }
+	vTaskDelay(pdMS_TO_TICKS(10));
   }
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_vmodbusTask */
+/* USER CODE BEGIN Header_vServeQueue */
 /**
-* @brief Function implementing the modbusTask thread.
+* @brief Function implementing the ServeQueueTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_vmodbusTask */
-void vUART_ReadTask(void *argument)
+/* USER CODE END Header_vServeQueue */
+void vServeQueue(void *argument)
 {
-  /* USER CODE BEGIN vmodbusTask */
+  /* USER CODE BEGIN vServeQueue */
   /* Infinite loop */
   for(;;)
   {
-
-	uint8_t len;
-	switch (read_state){
-		case CAR:
-			len = read_Hreg(&CAR_STA, read_TxFrame[0]);
-			HAL_UART_Transmit(&huart1, read_TxFrame[0], len, RESPONSE_TIMEOUT);
-			read_state = HALL;
-			break;
-
-		case HALL:
-			len = read_Hreg(&HALL_STA, read_TxFrame[1]);
-			HAL_UART_Transmit(&huart1, read_TxFrame[1], len, RESPONSE_TIMEOUT);
-			read_state = MQTT;
-			break;
-
-		case MQTT:
-			read_Hreg(&MQTT_STA, read_TxFrame[2]);
-			HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
-			read_state = DRIVER;
-			break;
-
-		case DRIVER:
-			read_Hreg(&SERVO_DRIVER, read_TxFrame[3]);
-			HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
-			read_state = CAR;
-			break;
-		}
-	vTaskDelay(pdMS_TO_TICKS(10));
+    osDelay(1);
   }
-  /* USER CODE END vmodbusTask */
+  /* USER CODE END vServeQueue */
 }
 
-/* USER CODE BEGIN Header_vprocessTask */
+/* USER CODE BEGIN Header_vTransit */
 /**
-* @brief Function implementing the processTask thread.
+* @brief Function implementing the TransitTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_vprocessTask */
-void vProcessTask(void *argument)
+/* USER CODE END Header_vTransit */
+void vTransit(void *argument)
 {
-  /* USER CODE BEGIN vprocessTask */
+  /* USER CODE BEGIN vTransit */
   /* Infinite loop */
   for(;;)
   {
-	UART_Frame frameBuf;
-    if (xQueueReceive(xUartQueue, &frameBuf, portMAX_DELAY) == pdTRUE)
-    {
-    	int id = frameBuf.data[0];
-	    memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
-
-
-	vTaskDelay(pdMS_TO_TICKS(10));
+    osDelay(1);
   }
-  /* USER CODE END vprocessTask */
-  }
+  /* USER CODE END vTransit */
 }
+
+/* USER CODE BEGIN Header_vUART_Write */
+/**
+* @brief Function implementing the UART_WriteTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_vUART_Write */
+void vUART_Write(void *argument)
+{
+  /* USER CODE BEGIN vUART_Write */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END vUART_Write */
+}
+
+/* USER CODE BEGIN Header_vUART_Read */
+/**
+* @brief Function implementing the UART_ReadTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_vUART_Read */
+void vUART_Read(void *argument)
+{
+  /* USER CODE BEGIN vUART_Read */
+  /* Infinite loop */
+	  for(;;)
+	  {
+
+		uint8_t len;
+		switch (read_state){
+			case CAR:
+				len = read_Hreg(&CAR_STA, read_TxFrame[0]);
+				HAL_UART_Transmit(&huart1, read_TxFrame[0], len, RESPONSE_TIMEOUT);
+				read_state = HALL;
+				break;
+
+			case HALL:
+				len = read_Hreg(&HALL_STA, read_TxFrame[1]);
+				HAL_UART_Transmit(&huart1, read_TxFrame[1], len, RESPONSE_TIMEOUT);
+				read_state = MQTT;
+				break;
+
+			case MQTT:
+				read_Hreg(&MQTT_STA, read_TxFrame[2]);
+				HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
+				read_state = DRIVER;
+				break;
+
+			case DRIVER:
+				read_Hreg(&SERVO_DRIVER, read_TxFrame[3]);
+				HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
+				read_state = CAR;
+				break;
+			}
+		vTaskDelay(pdMS_TO_TICKS(10));
+	  }
+  /* USER CODE END vUART_Read */
+}
+
 /**
   * @brief  Period elapsed callback in non blocking mode
   * @note   This function is called  when TIM6 interrupt took place, inside
