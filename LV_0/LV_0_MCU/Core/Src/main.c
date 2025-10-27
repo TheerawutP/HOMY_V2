@@ -729,6 +729,38 @@ void vProcess(void *argument)
 
   for(;;)
   {
+	  uint16_t val = (read_RxFrame[2][5] << 8) | read_RxFrame[2][6];
+	  hall_calling_UP[0] = (val & 0x0001) != 0;
+	  hall_calling_UP[1] = (val & 0x0002) != 0;
+	  hall_calling_UP[2] = (val & 0x0004) != 0;
+	  hall_calling_UP[3] = (val & 0x0008) != 0;
+	  hall_calling_UP[4] = (val & 0x0010) != 0;
+	  hall_calling_UP[5] = (val & 0x0020) != 0;
+	  hall_calling_UP[6] = (val & 0x0040) != 0;
+	  hall_calling_UP[7] = (val & 0x0080) != 0;
+	  hall_calling_UP[8] = (val & 0x0100) != 0;
+
+	  val = (read_RxFrame[2][7] << 8) | read_RxFrame[2][8];
+	  hall_calling_DW[0] = (val & 0x0001) != 0;
+	  hall_calling_DW[1] = (val & 0x0002) != 0;
+	  hall_calling_DW[2] = (val & 0x0004) != 0;
+	  hall_calling_DW[3] = (val & 0x0008) != 0;
+	  hall_calling_DW[4] = (val & 0x0010) != 0;
+	  hall_calling_DW[5] = (val & 0x0020) != 0;
+	  hall_calling_DW[6] = (val & 0x0040) != 0;
+	  hall_calling_DW[7] = (val & 0x0080) != 0;
+	  hall_calling_DW[8] = (val & 0x0100) != 0;
+
+	  val = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
+	  car_transit[0] = (val & 0x0001) != 0;
+	  car_transit[1] = (val & 0x0002) != 0;
+	  car_transit[2] = (val & 0x0004) != 0;
+	  car_transit[3] = (val & 0x0008) != 0;
+	  car_transit[4] = (val & 0x0010) != 0;
+	  car_transit[5] = (val & 0x0020) != 0;
+	  car_transit[6] = (val & 0x0040) != 0;
+	  car_transit[7] = (val & 0x0080) != 0;
+	  car_transit[8] = (val & 0x0100) != 0;
 
 
 	  if(hall_calling_UP[0] == 1){
