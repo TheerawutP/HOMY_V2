@@ -116,29 +116,25 @@ SERVE_QUEUE transit_queue;
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define DIR(car_pos, dest)  ((car_pos) > (dest) ? DOWN : UP)
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
-QueueHandle_t xUART_QueueHandle;
-QueueHandle_t xServe_QueueHandle;
-SemaphoreHandle_t xQueueSem;
-SemaphoreHandle_t xQueueMutex;
 
-/* Definitions for ProcessTask */
-osThreadId_t ProcessTaskHandle;
-const osThreadAttr_t ProcessTask_attributes = {
-  .name = "ProcessTask",
-  .stack_size = 512 * 4,
+/* Definitions for ParsingTask */
+osThreadId_t ParsingTaskHandle;
+const osThreadAttr_t ParsingTask_attributes = {
+  .name = "ParsingTask",
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for ServeQueueTask */
 osThreadId_t ServeQueueTaskHandle;
 const osThreadAttr_t ServeQueueTask_attributes = {
   .name = "ServeQueueTask",
-  .stack_size = 512 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for TransitTask */
@@ -162,13 +158,24 @@ const osThreadAttr_t UART_ReadTask_attributes = {
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for ProcessTask */
+osThreadId_t ProcessTaskHandle;
+const osThreadAttr_t ProcessTask_attributes = {
+  .name = "ProcessTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* USER CODE BEGIN PV */
 uint8_t RxData[32];
 uint8_t read_TxFrame[16][32];
 uint8_t read_RxFrame[16][32];
-
+uint8_t car_pos;
 current_slave read_state = CAR;
 
+QueueHandle_t xUART_QueueHandle;
+QueueHandle_t xServe_QueueHandle;
+SemaphoreHandle_t xQueueSem;
+SemaphoreHandle_t xQueueMutex;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -176,11 +183,12 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
-void vProcess(void *argument);
+void vParsing(void *argument);
 void vServeQueue(void *argument);
 void vTransit(void *argument);
 void vUART_Write(void *argument);
 void vUART_Read(void *argument);
+void vProcess(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -299,6 +307,8 @@ int dequeue(transitReq *task) {
     transit_queue.front = (transit_queue.front + 1) % QUEUE_SIZE;
     return 1;
 }
+
+
 /* USER CODE END 0 */
 
 /**
@@ -361,8 +371,8 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of ProcessTask */
-  ProcessTaskHandle = osThreadNew(vProcess, NULL, &ProcessTask_attributes);
+  /* creation of ParsingTask */
+  ParsingTaskHandle = osThreadNew(vParsing, NULL, &ParsingTask_attributes);
 
   /* creation of ServeQueueTask */
   ServeQueueTaskHandle = osThreadNew(vServeQueue, NULL, &ServeQueueTask_attributes);
@@ -375,6 +385,9 @@ int main(void)
 
   /* creation of UART_ReadTask */
   UART_ReadTaskHandle = osThreadNew(vUART_Read, NULL, &UART_ReadTask_attributes);
+
+  /* creation of ProcessTask */
+  ProcessTaskHandle = osThreadNew(vProcess, NULL, &ProcessTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -556,14 +569,14 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_vProcess */
+/* USER CODE BEGIN Header_vParsing */
 /**
-  * @brief  Function implementing the ProcessTask thread.
+  * @brief  Function implementing the ParsingTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_vProcess */
-void vProcess(void *argument)
+/* USER CODE END Header_vParsing */
+void vParsing(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
@@ -576,6 +589,7 @@ void vProcess(void *argument)
 			    memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
 
 		    }
+
 	vTaskDelay(pdMS_TO_TICKS(10));
   }
   /* USER CODE END 5 */
@@ -595,7 +609,6 @@ void vServeQueue(void *argument)
   transitReq request;
   for(;;)
   {
-	  //order = { from hall1 2  3  or car, dest}
 		if (xQueueReceive(xServe_QueueHandle, &request, portMAX_DELAY) == pdTRUE)
 		    {
 				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
@@ -626,7 +639,7 @@ void vTransit(void *argument)
 	  if(xSemaphoreTake(xQueueSem, portMAX_DELAY) == pdTRUE){
 		  if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
 			  if(dequeue(&request)){
-				  //do task
+				  //start transit
 			  }
               xSemaphoreGive(xQueueMutex);
 		  }
@@ -696,6 +709,66 @@ void vUART_Read(void *argument)
 		vTaskDelay(pdMS_TO_TICKS(10));
 	  }
   /* USER CODE END vUART_Read */
+}
+
+/* USER CODE BEGIN Header_vProcess */
+/**
+* @brief Function implementing the ProcessTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_vProcess */
+void vProcess(void *argument)
+{
+  /* USER CODE BEGIN vProcess */
+  /* Infinite loop */
+  transitReq request;
+  uint8_t hall_calling_UP[16];
+  uint8_t hall_calling_DW[16];
+  uint8_t car_transit[16];
+
+  for(;;)
+  {
+
+
+	  if(hall_calling_UP[0] == 1){
+		 for(int i = 1; i<=8; i++){
+			 if(hall_calling_UP[i] == 1){
+				 request.from = i;
+				 request.dest = 0;
+				 request.dir = UP;
+				 xQueueSend(xServe_QueueHandle, &request, (TickType_t)0);
+			 }
+		 }
+	  }
+
+	  if(hall_calling_DW[0] == 1){
+		 for(int i = 1; i<=8; i++){
+			 if(hall_calling_UP[i] == 1){
+				 request.from = i;
+				 request.dest = 0;
+				 request.dir = DOWN;
+				 xQueueSend(xServe_QueueHandle, &request, (TickType_t)0);
+			 }
+		 }
+	  }
+
+	  if(car_transit[0] == 1){
+		 for(int i = 1; i<=8; i++){
+			 if(hall_calling_UP[i] == 1){
+				 request.from = car_pos;
+				 request.dest = i;
+				 request.dir = DIR(car_pos, i); //macro
+				 xQueueSend(xServe_QueueHandle, &request, (TickType_t)0);
+			 }
+		 }
+	  }
+
+
+
+	vTaskDelay(pdMS_TO_TICKS(10));
+  }
+  /* USER CODE END vProcess */
 }
 
 /**
