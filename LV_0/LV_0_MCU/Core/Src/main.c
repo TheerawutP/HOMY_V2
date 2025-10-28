@@ -26,6 +26,7 @@
 #include "queue.h"
 #include "semphr.h"
 #include "string.h"
+#include "stdlib.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -65,11 +66,12 @@ typedef struct{
 	uint8_t from;
 	uint8_t dest;
 	direction dir;
+	uint8_t target;
 	call_by requestBy;
 }transitReq;
 
 typedef struct{
-	transitReq request[32];
+	uint8_t request[32];
 	uint8_t front;
 	uint8_t rear;
 }SERVE_QUEUE;
@@ -112,6 +114,10 @@ NewSlave SERVO_DRIVER = {
 };
 
 SERVE_QUEUE transit_queue;
+
+SERVE_QUEUE queue_UP;
+SERVE_QUEUE queue_DW;
+
 ELEVATOR_CAR cabin_1 = {
 		.max_fl = 8,
 		.min_fl = 1,
@@ -238,6 +244,13 @@ void parseEndian(uint16_t val, uint8_t *hi, uint8_t *lo){
      *lo = val & 0xFF;
 }
 
+void extractBits(uint16_t val, uint8_t *arr, uint8_t size) {
+    for (uint8_t i = 0; i < size; i++) {
+        arr[i] = (val & (1 << i)) ? 1 : 0;
+    }
+}
+
+
 uint8_t read_Hreg(NewSlave *a, uint8_t *frame)
 {
 	int len = 0;
@@ -316,20 +329,18 @@ int enqueue(transitReq task, SERVE_QUEUE *queue) {
     if(isFull(queue)) return 0;
 
     int next = queue->rear + 1;
-    queue->request[queue->rear] = task;
+    queue->request[queue->rear] = task.target;
     queue->rear = next;
     return 1;
 }
 
-int dequeue(transitReq *task, SERVE_QUEUE *queue) {
+int dequeue(SERVE_QUEUE *queue) {
 	if(isEmpty(queue)) return 0;
-
-    *task = queue->request[queue->front];
     queue->front = (queue->front + 1) % QUEUE_SIZE;
     return 1;
 }
 
-int insertqueue(transitReq request, SERVE_QUEUE *queue, int pos){
+int insertqueue(transitReq task, SERVE_QUEUE *queue, int pos){
     int next = (queue->rear + 1) % QUEUE_SIZE;
     if(next == queue->front) return 0;
 
@@ -342,14 +353,39 @@ int insertqueue(transitReq request, SERVE_QUEUE *queue, int pos){
     	curr = prev;
     }
 
-    queue->request[pos] = request;
+    queue->request[pos] = task.target;
 	return 1;
 }
 
-int ElevatorQueueManage(ELEVATOR_CAR *car, transitReq request, SERVE_QUEUE *queue){
-	if(isEmpty(queue)) car->dir = IDLE;
+void sortByProximity(uint8_t arr[], uint8_t pos) {
+    uint8_t n = QUEUE_SIZE;
+    uint8_t i, j, temp;
+    for (i = 0; i < n - 1; i++) {
+        for (j = 0; j < n - i - 1; j++) {
+        	int diff1 = abs(arr[j] - pos);
+        	int diff2 = abs(arr[j + 1] - pos);
+            if (diff1 > diff2) {
+                temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+        }
+    }
+}
 
+int elevatorQueueManage(ELEVATOR_CAR *car, transitReq task, SERVE_QUEUE *up, SERVE_QUEUE *dw){
 
+	if(car->dir == IDLE){
+		car->dir = task.dir;
+	}
+
+	if(task.dir == UP){
+		enqueue(task, up);
+		sortByProximity(up->request, car->pos);
+	}else{
+		enqueue(task, dw);
+		sortByProximity(dw->request, car->pos);
+	}
 
 	return 1;
 }
@@ -657,9 +693,9 @@ void vServeQueue(void *argument)
 		if (xQueueReceive(xServe_QueueHandle, &request, portMAX_DELAY) == pdTRUE)
 		    {
 				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
-//					if(elevatorAlgorithm(request, transit_queue)){
-//		                xSemaphoreGive(xQueueSem);
-//					}
+					if(elevatorQueueManage(&cabin_1, request, &queue_UP, &queue_DW)){
+		                xSemaphoreGive(xQueueSem);
+					}
 		            xSemaphoreGive(xQueueMutex);
 				}
 		    }
@@ -678,20 +714,35 @@ void vTransit(void *argument)
 {
   /* USER CODE BEGIN vTransit */
   /* Infinite loop */
-  transitReq request;
   for(;;)
   {
 	  if(xSemaphoreTake(xQueueSem, portMAX_DELAY) == pdTRUE){
 		  if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
-//			  if(dequeue(&request)){
-//				  //start transit
-//			  }
-              xSemaphoreGive(xQueueMutex);
+			  switch (cabin_1.dir){
+			  case (IDLE):
+					  break;
+			  case (UP):
+						if(isEmpty(&queue_UP)) cabin_1.dir = DOWN;
+			  	  	  	if(dequeue(&queue_UP)){
+			  	  	  		//move up to target
+			  	  	  	}
+			  	  	  	break;
+			  case (DOWN):
+						if(isEmpty(&queue_DW)) cabin_1.dir = UP;
+					  	if(dequeue(&queue_DW)){
+					  	  	//move down to target
+					  	}
+					  	break;
+			  }
+
 		  }
+          xSemaphoreGive(xQueueMutex);
+
 	  }
   }
   /* USER CODE END vTransit */
 }
+
 
 /* USER CODE BEGIN Header_vUART_Write */
 /**
@@ -740,13 +791,13 @@ void vUART_Read(void *argument)
 				break;
 
 			case MQTT:
-				read_Hreg(&MQTT_STA, read_TxFrame[2]);
+				len = read_Hreg(&MQTT_STA, read_TxFrame[2]);
 				HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
 				read_state = DRIVER;
 				break;
 
 			case DRIVER:
-				read_Hreg(&SERVO_DRIVER, read_TxFrame[3]);
+				len = read_Hreg(&SERVO_DRIVER, read_TxFrame[3]);
 				HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
 				read_state = CAR;
 				break;
@@ -768,64 +819,42 @@ void vProcess(void *argument)
   /* USER CODE BEGIN vProcess */
   /* Infinite loop */
   transitReq request;
-  uint8_t hall_calling_UP[16];
-  uint8_t hall_calling_DW[16];
-  uint8_t car_aiming[16];
-
+  uint8_t hall_calling_UP[16] = {0};
+  uint8_t hall_calling_DW[16] = {0};
+  uint8_t car_aiming[16] = {0};
   for(;;)
   {
-	  uint16_t val = (read_RxFrame[2][5] << 8) | read_RxFrame[2][6];
-	  hall_calling_UP[0] = (val & 0x0001) != 0;
-	  hall_calling_UP[1] = (val & 0x0002) != 0;
-	  hall_calling_UP[2] = (val & 0x0004) != 0;
-	  hall_calling_UP[3] = (val & 0x0008) != 0;
-	  hall_calling_UP[4] = (val & 0x0010) != 0;
-	  hall_calling_UP[5] = (val & 0x0020) != 0;
-	  hall_calling_UP[6] = (val & 0x0040) != 0;
-	  hall_calling_UP[7] = (val & 0x0080) != 0;
-	  hall_calling_UP[8] = (val & 0x0100) != 0;
+      /* --- Hall UP --- */
+      uint16_t val_up = (read_RxFrame[2][5] << 8) | read_RxFrame[2][6];
+      extractBits(val_up, hall_calling_UP, cabin_1.max_fl);
 
-	  val = (read_RxFrame[2][7] << 8) | read_RxFrame[2][8];
-	  hall_calling_DW[0] = (val & 0x0001) != 0;
-	  hall_calling_DW[1] = (val & 0x0002) != 0;
-	  hall_calling_DW[2] = (val & 0x0004) != 0;
-	  hall_calling_DW[3] = (val & 0x0008) != 0;
-	  hall_calling_DW[4] = (val & 0x0010) != 0;
-	  hall_calling_DW[5] = (val & 0x0020) != 0;
-	  hall_calling_DW[6] = (val & 0x0040) != 0;
-	  hall_calling_DW[7] = (val & 0x0080) != 0;
-	  hall_calling_DW[8] = (val & 0x0100) != 0;
+      /* --- Hall DOWN --- */
+      uint16_t val_dw = (read_RxFrame[2][7] << 8) | read_RxFrame[2][8];
+      extractBits(val_dw, hall_calling_DW, cabin_1.max_fl);
 
-	  val = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
-	  car_aiming[0] = (val & 0x0001) != 0;
-	  car_aiming[1] = (val & 0x0002) != 0;
-	  car_aiming[2] = (val & 0x0004) != 0;
-	  car_aiming[3] = (val & 0x0008) != 0;
-	  car_aiming[4] = (val & 0x0010) != 0;
-	  car_aiming[5] = (val & 0x0020) != 0;
-	  car_aiming[6] = (val & 0x0040) != 0;
-	  car_aiming[7] = (val & 0x0080) != 0;
-	  car_aiming[8] = (val & 0x0100) != 0;
+      /* --- Car Aiming --- */
+      uint16_t val_car = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
+      extractBits(val_car, car_aiming, cabin_1.max_fl);
 
 
 	  if(hall_calling_UP[0] == 1){
 		 for(int i = 1; i<=8; i++){
 			 if(hall_calling_UP[i] == 1){
-				 request.from = i;
-				 request.dest = 0;
+				 request.target = i;
 				 request.dir = UP;
-				 xQueueSend(xServe_QueueHandle, &request, (TickType_t)0);
+				 request.requestBy = HALL_UI;
+				 xQueueSend(xServe_QueueHandle, &request, 0);
 			 }
 		 }
 	  }
 
 	  if(hall_calling_DW[0] == 1){
 		 for(int i = 1; i<=8; i++){
-			 if(hall_calling_UP[i] == 1){
-				 request.from = i;
-				 request.dest = 0;
+			 if(hall_calling_DW[i] == 1){
+				 request.target = i;
 				 request.dir = DOWN;
-				 xQueueSend(xServe_QueueHandle, &request, (TickType_t)0);
+				 request.requestBy = HALL_UI;
+				 xQueueSend(xServe_QueueHandle, &request, 0);
 			 }
 		 }
 	  }
@@ -833,10 +862,10 @@ void vProcess(void *argument)
 	  if(car_aiming[0] == 1){
 		 for(int i = 1; i<=8; i++){
 			 if(hall_calling_UP[i] == 1){
-				 request.from = cabin_1.pos;
-				 request.dest = i;
+				 request.target = i;
 				 request.dir = DIR(cabin_1.pos, i); //macro
-				 xQueueSend(xServe_QueueHandle, &request, (TickType_t)0);
+				 request.requestBy = CABIN;
+				 xQueueSend(xServe_QueueHandle, &request, 0);
 			 }
 		 }
 	  }
