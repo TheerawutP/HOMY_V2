@@ -718,28 +718,18 @@ void vTransit(void *argument)
   {
 	  if(xSemaphoreTake(xQueueSem, portMAX_DELAY) == pdTRUE){
 		  if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
-			  switch (cabin_1.dir){
-			  case (IDLE):
-					  break;
-			  case (UP):
-						if(isEmpty(&queue_UP)) cabin_1.dir = DOWN;
-			  	  	  	if(dequeue(&queue_UP)){
-			  	  	  		//move up to target
-			  	  	  	}
-			  	  	  	break;
-			  case (DOWN):
-						if(isEmpty(&queue_DW)) cabin_1.dir = UP;
-					  	if(dequeue(&queue_DW)){
-					  	  	//move down to target
-					  	}
-					  	break;
-			  }
-
+			  //uint8_t dest  = curr_transit_request.dest;
+			  //servo_1.dir = curr_transit_request.dir;
+		      xSemaphoreGive(xQueueMutex);
 		  }
-          xSemaphoreGive(xQueueMutex);
 
+		   //while(car_1.pos != dest){
+			  //servo.rotate();
+			  vTaskDelay(pdMS_TO_TICKS(10));
+			}
+
+		   //xSemaphoreGive(xTransitDoneSem); //done transit flag
 	  }
-  }
   /* USER CODE END vTransit */
 }
 
