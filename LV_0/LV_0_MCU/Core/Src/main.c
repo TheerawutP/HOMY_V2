@@ -113,10 +113,10 @@ NewSlave SERVO_DRIVER = {
 		.num_writeHreg = 0x0001,
 };
 
-SERVE_QUEUE transit_queue;
-
 SERVE_QUEUE queue_UP;
 SERVE_QUEUE queue_DW;
+
+uint8_t curr_transit_to;
 
 ELEVATOR_CAR cabin_1 = {
 		.max_fl = 8,
@@ -195,6 +195,8 @@ QueueHandle_t xUART_QueueHandle;
 QueueHandle_t xServe_QueueHandle;
 SemaphoreHandle_t xQueueSem;
 SemaphoreHandle_t xQueueMutex;
+SemaphoreHandle_t xTransitDoneSem;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -336,6 +338,7 @@ int enqueue(transitReq task, SERVE_QUEUE *queue) {
 
 int dequeue(SERVE_QUEUE *queue) {
 	if(isEmpty(queue)) return 0;
+    queue->request[queue->front] = queue->request[queue->front+1];
     queue->front = (queue->front + 1) % QUEUE_SIZE;
     return 1;
 }
@@ -699,6 +702,46 @@ void vServeQueue(void *argument)
 		            xSemaphoreGive(xQueueMutex);
 				}
 		    }
+
+
+		if(xSemaphoreTake(xTransitDoneSem, portMAX_DELAY) == pdTRUE)
+			{
+				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
+
+					direction curr_dir = cabin_1.dir;
+					switch (curr_dir){
+					case IDLE:
+						break;
+					case UP:
+						dequeue(&queue_UP);
+						break;
+					case DOWN:
+						dequeue(&queue_DW);
+						break;
+					}
+
+					if(!isEmpty(&queue_UP) || !isEmpty(&queue_DW)){
+
+						if((isEmpty(&queue_UP) == 0) && (curr_dir == UP)){
+							curr_transit_to = queue_UP.request[0];
+			                xSemaphoreGive(xQueueSem);
+
+						}else if((isEmpty(&queue_UP) == 1) && (curr_dir == UP)){
+							cabin_1.dir = DOWN;
+
+						}else if((isEmpty(&queue_DW) == 0) && (curr_dir == DOWN)){
+							curr_transit_to = queue_DW.request[0];
+			                xSemaphoreGive(xQueueSem);
+
+						}else if((isEmpty(&queue_DW) == 1) && (curr_dir == DOWN)){
+							cabin_1.dir = UP;
+						}
+					}else{
+						cabin_1.dir = IDLE;
+					}
+		            xSemaphoreGive(xQueueMutex);
+				}
+			}
   }
   /* USER CODE END vServeQueue */
 }
@@ -714,22 +757,24 @@ void vTransit(void *argument)
 {
   /* USER CODE BEGIN vTransit */
   /* Infinite loop */
+  uint8_t dest;
   for(;;)
   {
 	  if(xSemaphoreTake(xQueueSem, portMAX_DELAY) == pdTRUE){
 		  if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
-			  //uint8_t dest  = curr_transit_request.dest;
-			  //servo_1.dir = curr_transit_request.dir;
+			  dest  = curr_transit_to;
 		      xSemaphoreGive(xQueueMutex);
 		  }
 
-		   //while(car_1.pos != dest){
+		  //servo_1.dir = cabin_1.dir;
+		   while(cabin_1.pos != dest){
 			  //servo.rotate();
 			  vTaskDelay(pdMS_TO_TICKS(10));
 			}
 
 		   //xSemaphoreGive(xTransitDoneSem); //done transit flag
 	  }
+  }
   /* USER CODE END vTransit */
 }
 
