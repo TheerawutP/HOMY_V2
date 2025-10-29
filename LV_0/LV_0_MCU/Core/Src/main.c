@@ -185,6 +185,11 @@ const osThreadAttr_t ProcessTask_attributes = {
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for xStartTransitTimer */
+osTimerId_t xStartTransitTimerHandle;
+const osTimerAttr_t xStartTransitTimer_attributes = {
+  .name = "xStartTransitTimer"
+};
 /* USER CODE BEGIN PV */
 uint8_t RxData[32];
 uint8_t read_TxFrame[16][32];
@@ -196,7 +201,6 @@ QueueHandle_t xServe_QueueHandle;
 SemaphoreHandle_t xQueueSem;
 SemaphoreHandle_t xQueueMutex;
 SemaphoreHandle_t xTransitDoneSem;
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -210,6 +214,7 @@ void vTransit(void *argument);
 void vUART_Write(void *argument);
 void vUART_Read(void *argument);
 void vProcess(void *argument);
+void vStartTransit(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -408,6 +413,7 @@ int main(void)
   xQueueMutex = xSemaphoreCreateMutex();
   xQueueSem = xSemaphoreCreateBinary();
 
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -445,6 +451,10 @@ int main(void)
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
+
+  /* Create the timer(s) */
+  /* creation of xStartTransitTimer */
+  xStartTransitTimerHandle = osTimerNew(vStartTransit, osTimerPeriodic, NULL, &xStartTransitTimer_attributes);
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
@@ -697,7 +707,8 @@ void vServeQueue(void *argument)
 		    {
 				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
 					if(elevatorQueueManage(&cabin_1, request, &queue_UP, &queue_DW)){
-		                xSemaphoreGive(xQueueSem);
+		                if(cabin_1.dir == IDLE) osTimerStart(xStartTransitTimerHandle, 6000);
+		                else osTimerStart(xStartTransitTimerHandle, 100);
 					}
 		            xSemaphoreGive(xQueueMutex);
 				}
@@ -727,14 +738,14 @@ void vServeQueue(void *argument)
 			                xSemaphoreGive(xQueueSem);
 
 						}else if((isEmpty(&queue_UP) == 1) && (curr_dir == UP)){
-							cabin_1.dir = DOWN;
+							if(!isEmpty(&queue_DW)) cabin_1.dir = DOWN;
 
 						}else if((isEmpty(&queue_DW) == 0) && (curr_dir == DOWN)){
 							curr_transit_to = queue_DW.request[0];
 			                xSemaphoreGive(xQueueSem);
 
 						}else if((isEmpty(&queue_DW) == 1) && (curr_dir == DOWN)){
-							cabin_1.dir = UP;
+							if(!isEmpty(&queue_UP)) cabin_1.dir = UP;
 						}
 					}else{
 						cabin_1.dir = IDLE;
@@ -772,12 +783,11 @@ void vTransit(void *argument)
 			  vTaskDelay(pdMS_TO_TICKS(10));
 			}
 
-		   //xSemaphoreGive(xTransitDoneSem); //done transit flag
+		   xSemaphoreGive(xTransitDoneSem); //done transit flag
 	  }
   }
   /* USER CODE END vTransit */
 }
-
 
 /* USER CODE BEGIN Header_vUART_Write */
 /**
@@ -908,6 +918,14 @@ void vProcess(void *argument)
 	vTaskDelay(pdMS_TO_TICKS(10));
   }
   /* USER CODE END vProcess */
+}
+
+/* vStartTransit function */
+void vStartTransit(void *argument)
+{
+  /* USER CODE BEGIN vStartTransit */
+	xSemaphoreGive(xQueueSem);
+  /* USER CODE END vStartTransit */
 }
 
 /**
