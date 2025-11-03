@@ -326,8 +326,7 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(pin_close), ISR_Close, FALLING);
 
   pinMode(pin_hold, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(pin_hold), ISR_Hold, FALLING);
-  attachInterrupt(digitalPinToInterrupt(pin_hold), ISR_Release_Hold, RISING);
+  attachInterrupt(digitalPinToInterrupt(pin_hold), ISR_Hold, CHANGE);
 
   pinMode(pin_bell, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(pin_bell), ISR_Bell, FALLING);

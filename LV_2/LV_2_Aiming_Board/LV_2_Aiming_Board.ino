@@ -21,25 +21,30 @@
 #define DOWN 4
 #define UP 5
 
+QueueHandler_t xAimQueue;
+
 ModbusRTU RTU_SLAVE;
 uint16_t lastSVal;
 
 unsigned long last = 0;
 int h = 0;
 
+//callback for handle writing at Hreg
 uint16_t cbWrite(TRegister* reg, uint16_t val) {
-  if (lastSVal != val) {
-    lastSVal = val;
-    Serial.println(String("HregSet val:") + String(val));
-  }
+  // if (lastSVal != val) {
+  //   lastSVal = val;
+  //   Serial.println(String("HregSet val:") + String(val));
+  // }
   return val;
 }
 
+//callback for handle reading at Hreg
 uint16_t cbRead(TRegister* reg, uint16_t val) {
   reg->value = val;   
   return val;
 }
 
+//callback for handle reading at Hreg
 void writeBit(uint16_t &value, uint8_t bit, bool state) {
     if (state) {
         value |= (1 << bit);     // set
@@ -48,12 +53,21 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
     }
 }
 
+void extractDataframe(uint16_t *frame[16], uint16_t val){
+  for(int i = 0; i<=15; i++){
+    frame[i] = (val >> i) & 0x0001;
+  }
+}
+
 void setup() {
   Serial.begin(115200);
+    //setup as master
   Serial2.begin(38400, SERIAL_8E1, 16, 17); // RX=16, TX=17
-  
+    //setup as slave 
   RTU_SLAVE.begin(&Serial2);
-  RTU_SLAVE.slave(2);        
+  RTU_SLAVE.slave(2);      
+  
+  //initiate Hreg
   RTU_SLAVE.addHreg(0x0000,0);   //for write by main controller 
   RTU_SLAVE.onSetHreg(0x0000, cbWrite); //written enable   
   RTU_SLAVE.onGetHreg(0x0000, cbRead);
@@ -76,8 +90,49 @@ void setup() {
 
   pinMode(DOWN, OUTPUT);    
   pinMode(UP, OUTPUT);  
+
+  xAimnQueue = xQueueCreate(16, sizeof(ButtonEvent_t));  //handler for evnet queue
+  xTaskCreate(vAimTask, "Aim_Scheduling", 2048, NULL, 3, NULL);
+
+}
+
+void vModbusComTask(void *pvParameters){
+  for(;;){
+  RTU_SLAVE.task();
+  uint16_t val = RTU_SLAVE.Hreg(0);
+  extractDataframe(&parsing_data, val);
+  /*
+  6 - 13 waiting in queue fl1 - 8 (turn on lamp fl1-8)
+
+  5 car pos b3
+  4 car pos b2
+  3 car pos b1
+  2 car pos b0
+
+  1 on up lamp
+  0 on dw lamp
+  */
+  xQueueSend(xDisplayHandle, &parsing_data);
+  vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+void vAimTask(void *pvParameters){
+  Aiming_t floor;
+  for(;;){
+      if(xQueueRecieve(xAimQueue, &floor, portMAX_DEKAY) == pdTrue){
+          //packing target in dataframe 
+          //display 
+      }
+  }
 }
   
+void vDisplay(){
+  if(){
+    
+  }
+}
+
 void loop() {
   uint16_t package;
   uint16_t bit_r[16];
@@ -99,7 +154,6 @@ void loop() {
   bit_r[7] = (val & 0x0080) != 0;            
   bit_r[8] = (val & 0x0100) != 0;            
   bit_r[9] = (val & 0x0200) != 0;            
-
 
   /////////////////////////////////////////////////////decode 4-bit to 0-9/////////////////////////////////////////////////////////////////////
   
