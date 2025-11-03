@@ -27,25 +27,25 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   ALLOC
  11 .ARM.attributes 00000030  00000000  00000000  00009094  2**0
                   CONTENTS, READONLY
- 12 .debug_info   00019cb4  00000000  00000000  000090c4  2**0
+ 12 .debug_info   00019cbc  00000000  00000000  000090c4  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 13 .debug_abbrev 00003714  00000000  00000000  00022d78  2**0
+ 13 .debug_abbrev 000036d4  00000000  00000000  00022d80  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 14 .debug_aranges 00001578  00000000  00000000  00026490  2**3
+ 14 .debug_aranges 00001578  00000000  00000000  00026458  2**3
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 15 .debug_rnglists 000010b8  00000000  00000000  00027a08  2**0
+ 15 .debug_rnglists 000010b8  00000000  00000000  000279d0  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 16 .debug_macro  000034bd  00000000  00000000  00028ac0  2**0
+ 16 .debug_macro  000034bd  00000000  00000000  00028a88  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_line   0001847a  00000000  00000000  0002bf7d  2**0
+ 17 .debug_line   0001847e  00000000  00000000  0002bf45  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_str    000db812  00000000  00000000  000443f7  2**0
+ 18 .debug_str    000db812  00000000  00000000  000443c3  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .comment      00000043  00000000  00000000  0011fc09  2**0
+ 19 .comment      00000043  00000000  00000000  0011fbd5  2**0
                   CONTENTS, READONLY
- 20 .debug_frame  00005d80  00000000  00000000  0011fc4c  2**2
+ 20 .debug_frame  00005d80  00000000  00000000  0011fc18  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 21 .debug_line_str 0000006c  00000000  00000000  001259cc  2**0
+ 21 .debug_line_str 0000006c  00000000  00000000  00125998  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -467,6 +467,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
  80005d8:	200005c8 	.word	0x200005c8
 
 080005dc <parseEndian>:
+
 
 void parseEndian(uint16_t val, uint8_t *hi, uint8_t *lo){
  80005dc:	b480      	push	{r7}

@@ -62,6 +62,15 @@ typedef enum{
 	DOWN
 }direction;
 
+//typedef struct{
+//	direction dir;
+//	uint16_t toque;
+//	uint16_t speed1;
+//	uint16_t speed2;
+//	void (*on)(void);
+//	void (*rotate)(direction r);
+//}SERVO;
+
 typedef struct{
 	uint8_t from;
 	uint8_t dest;
@@ -132,6 +141,12 @@ ELEVATOR_CAR cabin_1 = {
 #define FRAME_SIZE 32
 #define RESPONSE_TIMEOUT 20
 #define QUEUE_SIZE 32
+
+//servo macro
+//#define SERVO_ON(obj) (obj).on(&(obj))
+//#define SERV0_ROTATE(obj, dir) (obj).rotate(&(obj), dir, (obj).speed)
+//#define SERVO_SET_SPD(obj, spd) (obj).speed = spd
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -245,6 +260,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
 
 }
+
 
 void parseEndian(uint16_t val, uint8_t *hi, uint8_t *lo){
      *hi = (val >> 8) & 0xFF;
