@@ -21,7 +21,7 @@
 #define DOWN 4
 #define UP 5
 
-QueueHandler_t xAimQueue;
+QueueHandler_t xDisplayQueue;
 
 ModbusRTU RTU_SLAVE;
 uint16_t lastSVal;
@@ -91,8 +91,12 @@ void setup() {
   pinMode(DOWN, OUTPUT);    
   pinMode(UP, OUTPUT);  
 
-  xAimnQueue = xQueueCreate(16, sizeof(ButtonEvent_t));  //handler for evnet queue
+  xDisplayQueue = xQueueCreate(8, sizeof(ButtonEvent_t));  //handler for evnet queue
   xTaskCreate(vAimTask, "Aim_Scheduling", 2048, NULL, 3, NULL);
+
+  for(int i = 1; i<= MAX_FL; i++){
+    
+  }
 
 }
 
@@ -118,19 +122,22 @@ void vModbusComTask(void *pvParameters){
 }
 
 void vAimTask(void *pvParameters){
-  Aiming_t floor;
   for(;;){
-      if(xQueueRecieve(xAimQueue, &floor, portMAX_DEKAY) == pdTrue){
-          //packing target in dataframe 
-          //display 
+      uint8_t target = 0;
+      encode_aiming(target);
+      if(target != 0){
+        writeBit(package, 0, 1);                                  //dont forget to set 0 by STM after complete all cmd
+        writeBit(package, target, 1);
+        xTimerStart(xHoldStateTimer, 0);
       }
+      vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
   
 void vDisplayTask(){
   uint16_t state[16];
   for(;;){
-    
+
     if(xQueueRecieve(xDisplayQueue, &state, portMAX_DEKAY) == pdTrue){
       
       DW_LAMP(state[0]);
@@ -148,98 +155,9 @@ void vDisplayTask(){
   }
 }
 
+
 void loop() {
-  uint16_t package;
-  uint16_t bit_r[16];
-  
-  RTU_SLAVE.task();
-  ///////////////////////////////////////////////////////extract data from Hreg 0 (written by LV1)//////////////////////////////////////////
-
-  uint16_t val = RTU_SLAVE.Hreg(0);
-  //motion
-  bit_r[0] = (val & 0x0001) != 0;            
-  bit_r[1] = (val & 0x0002) != 0;    
-  //car position
-  bit_r[2] = (val & 0x0004) != 0;            
-  bit_r[3] = (val & 0x0008) != 0;            
-  bit_r[4] = (val & 0x0010) != 0;            
-  bit_r[5] = (val & 0x0020) != 0;
-  //confirm 
-  bit_r[6] = (val & 0x0040) != 0;            
-  bit_r[7] = (val & 0x0080) != 0;            
-  bit_r[8] = (val & 0x0100) != 0;            
-  bit_r[9] = (val & 0x0200) != 0;            
-
-  /////////////////////////////////////////////////////decode 4-bit to 0-9/////////////////////////////////////////////////////////////////////
-  
-
-  // uint16_t decode; 
-  // writeBit(decode, 0, ss_bit0);
-  // writeBit(decode, 1, ss_bit1);
-  // writeBit(decode, 2, ss_bit2);
-  // writeBit(decode, 3, ss_bit3);
-
-  // //from bit2-5 (position) in Hreg 0, light up 7-segment
-  // if(ss_bit0 == bit_r[6]) digitalWrite(segB0, HIGH);
-  // if(ss_bit1 == bit_r[7]) digitalWrite(segB1, HIGH);
-  // if(ss_bit2 == bit_r[8]) digitalWrite(segB2, HIGH);
-  // if(ss_bit3 == bit_r[9]) digitalWrite(segB3, HIGH);
-
-  // //Up, Down or Stay, then light up arrows LED
-  // if(bit_r[0] == 1 && bit_r[1] == 0){
-  //   digitalWrite(DOWN, HIGH);
-  // }else if(bit_r[0] == 0 && bit_r[1] == 1){
-  //   digitalWrite(UP, HIGH);
-  // }else{
-  //   digitalWrite(DOWN, LOW);
-  //   digitalWrite(UP, LOW);
-  // }
-  
-  // //light up floor button  
-  // switch (decode) {
-  //     case 1:
-  //       digitalWrite(out1, HIGH);
-  //       break;
-
-  //     case 2:
-  //       digitalWrite(out2, HIGH);
-  //       break;
-
-  //     case 3:
-  //       digitalWrite(out3, HIGH);
-  //       break;
-
-  //     case 4:
-  //       digitalWrite(out4, HIGH);
-  //       break;
-        
-  //     case 5:
-  //       digitalWrite(out5, HIGH);
-  //       break;
-
-  //     case 6:
-  //       digitalWrite(out6, HIGH);
-  //       break;
-  //   } 
-
-  if(digitalRead(36) == LOW){
-    writeBit(package, 1, 1);
-  }else{
-    writeBit(package, 1, 0);
-  }
-
-  if(digitalRead(39) == LOW){
-    writeBit(package, 2, 1);
-  }else{
-    writeBit(package, 2, 0);
-  }
-
-  writeBit(package, 0, 1); 
-  // writeBit(package, 1, digitalRead(ss_bit0)); 
-  // writeBit(package, 2, digitalRead(ss_bit1)); 
-  // writeBit(package, 3, digitalRead(ss_bit2)); 
-  // writeBit(package, 4, digitalRead(ss_bit3)); 
-  RTU_SLAVE.Hreg(1, package);
+ 
 }
 
 
