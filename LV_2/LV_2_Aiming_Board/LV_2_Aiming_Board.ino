@@ -127,9 +127,24 @@ void vAimTask(void *pvParameters){
   }
 }
   
-void vDisplay(){
-  if(){
+void vDisplayTask(){
+  uint16_t state[16];
+  for(;;){
     
+    if(xQueueRecieve(xDisplayQueue, &state, portMAX_DEKAY) == pdTrue){
+      
+      DW_LAMP(state[0]);
+      UP_LAMP(state[1]);
+      
+      uint8_t pos = state[2] + (state[3]*2) + (state[4]*4) + (state[5]*8);
+      POS_SEGMENTS(pos);
+
+      for(int i = 6; i <= 13; i++){
+          WAIT_IN_QUEUE(state[i]);
+      }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
