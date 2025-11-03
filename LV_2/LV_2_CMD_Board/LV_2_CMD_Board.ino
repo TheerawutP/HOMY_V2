@@ -1,11 +1,5 @@
 #include <ModbusRTU.h>
 #include <math.h>
-//RTOS libs
-// #include <Arduino_FreeRTOS.h>
-// #include <task.h>
-// #include <queue.h>
-// #include <timers.h>
-//#include "semphr.h"
 #include <stdio.h>
 
 //output
@@ -20,12 +14,13 @@
 
 //input
 #define pin_open 32
-#define pin_close 33
-#define pin_hold 25
+#define pin_close 33  
+#define pin_hold 25  
 #define pin_bell 36
 #define pin_emer 39
 //#define landing
 
+//evnet types 
 typedef enum {
     BTN_OPEN,
     BTN_CLOSE,
@@ -39,6 +34,7 @@ typedef enum {
     OBSTACLE
 } ButtonEvent_t;
 
+//door' states
 typedef enum { 
   DOOR_CLOSE, 
   DOOR_OPEN,
@@ -54,6 +50,7 @@ typedef struct{
 
 DoorState_t doorState = {DOOR_IDLE, DOOR_IDLE};
 
+
 QueueHandle_t xButtonQueue;
 //QueueHandle_t xModbusComQueue;
 TimerHandle_t xLastStateTimer;
@@ -63,6 +60,7 @@ uint16_t parsing_data[16];
 uint16_t package;
 uint16_t lastSVal;
 
+//callback for handle writing at Hreg
 uint16_t cbWrite(TRegister* reg, uint16_t val) {
   // if (lastSVal != val) {
   //   lastSVal = val;
@@ -71,11 +69,13 @@ uint16_t cbWrite(TRegister* reg, uint16_t val) {
   return val;
 }
 
+//callback for handle reading at Hreg
 uint16_t cbRead(TRegister* reg, uint16_t val) {
   reg->value = val;   
   return val;
 }
 
+//change state at specific bit in uint16_t val 
 void writeBit(uint16_t &value, uint8_t bit, bool state) {
     if (state) {
         value |= (1 << bit);     // set
@@ -98,6 +98,7 @@ void Door_Stay(){
    digitalWrite(EN, LOW);
 }
 
+//extract bit 0-15 from Written Hreg into array 
 void vModbusComTask(void *pvParameters){
   for(;;){
   RTU_SLAVE.task();
@@ -116,6 +117,7 @@ void vModbusComTask(void *pvParameters){
   parsing_data[7] = (val & 0x0080) != 0;            
   parsing_data[8] = (val & 0x0100) != 0; 
 
+//if some event occurs, send that type of event to handler 
   if(parsing_data[0] == 1){
     ButtonEvent_t evt = FULL_OPEN;
     xQueueSend(xButtonQueue, &evt, 0);
@@ -129,9 +131,11 @@ void vModbusComTask(void *pvParameters){
     xQueueSend(xButtonQueue, &evt, 0);
   }
 
+//packing data
   RTU_SLAVE.Hreg(1, package);
   package = 0;
 
+//yield for 10 ticks, let other task works
   vTaskDelay(pdMS_TO_TICKS(10));
   }
   //xQueueSend(xModbusQueue, &parsing_data, portMAX_DELAY);
@@ -145,8 +149,10 @@ void vDoorControlTask(void *pvParameters) {
 
                 case BTN_OPEN:
                     if(doorState.now_state != DOOR_OPEN){
+                      //remember door's last state
                       doorState.pre_state = doorState.now_state;
                       doorState.now_state = DOOR_OPEN;
+                      //write event type into dataframe
                       writeBit(package, 1, 1);
                       Door_Open();
                     }
@@ -162,6 +168,7 @@ void vDoorControlTask(void *pvParameters) {
                     break;
 
                 case BTN_HOLD:
+                    //if the current state isnt hold, then force door driver to off
                     if(doorState.now_state == DOOR_OPEN || doorState.now_state == DOOR_CLOSE){
                       doorState.pre_state = doorState.now_state;
                       doorState.now_state = DOOR_HOLD;
@@ -171,6 +178,7 @@ void vDoorControlTask(void *pvParameters) {
                     break;
 
                 case BTN_RELEASE_HOLD:
+                    //after release hold button for X ms, the state of door goes back to its last state then that handler of state start operates again
                     if (doorState.now_state == DOOR_HOLD) {
                       xTimerStart(xLastStateTimer, 0);
                       Door_Stay();
@@ -214,6 +222,7 @@ void vLastStateCallback(TimerHandle_t xTimer) {
 }
 
 void ISR_Open() {
+  //False is dont let higher priority task takes cpu from this ISR
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   ButtonEvent_t evt = BTN_OPEN;
   xQueueSendFromISR(xButtonQueue, &evt, &xHigherPriorityTaskWoken);
@@ -293,10 +302,14 @@ void ISR_SafteyLanding() {
 
 void setup() {
   Serial.begin(115200);
+  //setup as master
   Serial2.begin(38400, SERIAL_8E1, 16, 17); // RX=16, TX=17
 
+  //setup as slave 
   RTU_SLAVE.begin(&Serial2);
   RTU_SLAVE.slave(3);        
+  
+  //initiate Hreg
   RTU_SLAVE.addHreg(0x0000,0);   //for write by main controller 
   RTU_SLAVE.onSetHreg(0x0000, cbWrite); //written enable   
   RTU_SLAVE.onGetHreg(0x0000, cbRead);
@@ -305,6 +318,7 @@ void setup() {
   RTU_SLAVE.onSetHreg(0x0001, cbWrite); 
   RTU_SLAVE.onGetHreg(0x0001, cbRead); 
 
+  //attached EXTI to GPIO
   pinMode(pin_open, INPUT_PULLUP);   //INPUT_PULLUP
   attachInterrupt(digitalPinToInterrupt(pin_open), ISR_Open, FALLING);
 
@@ -332,10 +346,9 @@ void setup() {
   pinMode(EN, OUTPUT);
   pinMode(FR, OUTPUT);
 
-
-  xButtonQueue = xQueueCreate(10, sizeof(ButtonEvent_t));
-  //xModbusQueue = xQueueCreate(20, sizeof()); //16 = uint16_t
-  xLastStateTimer = xTimerCreate("LastState", pdMS_TO_TICKS(1500), pdFALSE, 0, vLastStateCallback);
+  xButtonQueue = xQueueCreate(10, sizeof(ButtonEvent_t));  //handler for evnet queue
+  //xModbusQueue = xQueueCreate(20, sizeof()); //16 = uint16_t     
+  xLastStateTimer = xTimerCreate("LastState", pdMS_TO_TICKS(1500), pdFALSE, 0, vLastStateCallback);    
   xTaskCreate(vDoorControlTask, "DoorControl", 2048, NULL, 3, NULL);
   xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
 
