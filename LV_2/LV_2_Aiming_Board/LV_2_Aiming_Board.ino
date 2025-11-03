@@ -1,6 +1,7 @@
 #include <ModbusRTU.h>
 #include <math.h>
 
+
 #define ss_bit0 36
 #define ss_bit1 39
 #define ss_bit2 34
@@ -21,11 +22,16 @@
 #define DOWN 4
 #define UP 5
 
-QueueHandler_t xDisplayQueue;
+#define DW_LAMP(obj) digitalWrite(DOWN,obj)
+#define UP_LAMP(obj) digitalWrite(UP,obj)
+#define WAIT_IN_QUEUE(state, obj) digitalWrite(state ,obj)
 
+QueueHandle_t xDisplayQueue;
+TimerHandle_t xHoldStateTimer;
 ModbusRTU RTU_SLAVE;
 uint16_t lastSVal;
-
+uint16_t parsing_data[16];
+uint16_t package;
 unsigned long last = 0;
 int h = 0;
 
@@ -53,10 +59,92 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
     }
 }
 
-void extractDataframe(uint16_t *frame[16], uint16_t val){
+void extractDataframe(uint16_t *frame, uint16_t val){
   for(int i = 0; i<=15; i++){
     frame[i] = (val >> i) & 0x0001;
   }
+}
+
+void pos_display(uint8_t floor){
+  uint8_t bin[4];
+  uint8_t i = 0;
+    while (floor > 0) {
+        bin[i] = floor % 2;
+        floor = floor / 2;
+        i++;
+    }
+  digitalWrite(segB0, bin[0]);
+  digitalWrite(segB1, bin[1]);
+  digitalWrite(segB2, bin[2]);
+  digitalWrite(segB3, bin[3]);
+
+}
+
+int encode_aiming(){
+  int bit0 = digitalRead(ss_bit0);
+  int bit1 = digitalRead(ss_bit1);
+  int bit2 = digitalRead(ss_bit2);
+  int bit3 = digitalRead(ss_bit3);
+  return (bit3 << 3) | (bit2 << 2) | (bit1 << 1) | bit0;
+;
+}
+
+void vModbusComTask(void *pvParameters){
+  for(;;){
+  RTU_SLAVE.task();
+  uint16_t val = RTU_SLAVE.Hreg(0);
+  extractDataframe(parsing_data, val);
+  /*
+  6 - 13 waiting in queue fl1 - 8 (turn on lamp fl1-8)
+
+  5 car pos b3
+  4 car pos b2
+  3 car pos b1
+  2 car pos b0
+
+  1 on up lamp
+  0 on dw lamp
+  */
+  xQueueSend(xDisplayQueue, parsing_data, 0);
+  vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+void vAimTask(void *pvParameters){
+  for(;;){
+      int target = encode_aiming();
+      if(target != 0){
+        writeBit(package, 0, 1);                                  //dont forget to set 0 by STM after complete all cmd
+        writeBit(package, target, 1);
+        xTimerStart(xHoldStateTimer, 0);
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+  
+void vDisplayTask(){
+  uint16_t state[16];
+  for(;;){
+
+    if(xQueueReceive(xDisplayQueue, &state, portMAX_DELAY) == pdTRUE){
+      
+      DW_LAMP(state[0]);
+      UP_LAMP(state[1]);
+      
+      uint8_t pos = state[2] + (state[3]*2) + (state[4]*4) + (state[5]*8);
+      pos_display(pos);
+
+      for(int i = 6; i <= 13; i++){
+          WAIT_IN_QUEUE(i, state[i]);
+      }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+void vHoldStateCallback(TimerHandle_t xTimer) {
+  
 }
 
 void setup() {
@@ -81,7 +169,7 @@ void setup() {
   // pinMode(ss_bit0, INPUT);   
   // pinMode(ss_bit1, INPUT);    
   pinMode(ss_bit2, INPUT);    
-  pinMode(ss_bit2, INPUT);   
+  pinMode(ss_bit3, INPUT);   
 
   pinMode(segB0, OUTPUT);   
   pinMode(segB1, OUTPUT);   
@@ -91,70 +179,10 @@ void setup() {
   pinMode(DOWN, OUTPUT);    
   pinMode(UP, OUTPUT);  
 
-  xDisplayQueue = xQueueCreate(8, sizeof(ButtonEvent_t));  //handler for evnet queue
-  xTaskCreate(vAimTask, "Aim_Scheduling", 2048, NULL, 3, NULL);
-
-  for(int i = 1; i<= MAX_FL; i++){
-    
-  }
-
+  xDisplayQueue = xQueueCreate(8, sizeof(parsing_data));  //handler for evnet queue
+  xTaskCreate(vAimTask, "AimButtonHandle", 2048, NULL, 3, NULL);
+  xHoldStateTimer = xTimerCreate("HoldState", pdMS_TO_TICKS(1000), pdFALSE, 0, vHoldStateCallback);    
 }
-
-void vModbusComTask(void *pvParameters){
-  for(;;){
-  RTU_SLAVE.task();
-  uint16_t val = RTU_SLAVE.Hreg(0);
-  extractDataframe(&parsing_data, val);
-  /*
-  6 - 13 waiting in queue fl1 - 8 (turn on lamp fl1-8)
-
-  5 car pos b3
-  4 car pos b2
-  3 car pos b1
-  2 car pos b0
-
-  1 on up lamp
-  0 on dw lamp
-  */
-  xQueueSend(xDisplayHandle, &parsing_data);
-  vTaskDelay(pdMS_TO_TICKS(10));
-  }
-}
-
-void vAimTask(void *pvParameters){
-  for(;;){
-      uint8_t target = 0;
-      encode_aiming(target);
-      if(target != 0){
-        writeBit(package, 0, 1);                                  //dont forget to set 0 by STM after complete all cmd
-        writeBit(package, target, 1);
-        xTimerStart(xHoldStateTimer, 0);
-      }
-      vTaskDelay(pdMS_TO_TICKS(10));
-  }
-}
-  
-void vDisplayTask(){
-  uint16_t state[16];
-  for(;;){
-
-    if(xQueueRecieve(xDisplayQueue, &state, portMAX_DEKAY) == pdTrue){
-      
-      DW_LAMP(state[0]);
-      UP_LAMP(state[1]);
-      
-      uint8_t pos = state[2] + (state[3]*2) + (state[4]*4) + (state[5]*8);
-      POS_SEGMENTS(pos);
-
-      for(int i = 6; i <= 13; i++){
-          WAIT_IN_QUEUE(state[i]);
-      }
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
-}
-
 
 void loop() {
  
