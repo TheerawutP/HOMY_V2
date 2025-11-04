@@ -22,6 +22,7 @@
 #define DOWN 4
 #define UP 5
 
+
 #define DW_LAMP(obj) digitalWrite(DOWN,obj)
 #define UP_LAMP(obj) digitalWrite(UP,obj)
 #define WAIT_IN_QUEUE(state, obj) digitalWrite(state ,obj)
@@ -34,6 +35,8 @@ uint16_t parsing_data[16];
 uint16_t package;
 unsigned long last = 0;
 int h = 0;
+
+int queuePins[6] = { out1, out2, out3, out4, out5, out6 };
 
 //callback for handle writing at Hreg
 uint16_t cbWrite(TRegister* reg, uint16_t val) {
@@ -66,7 +69,7 @@ void extractDataframe(uint16_t *frame, uint16_t val){
 }
 
 void pos_display(uint8_t floor){
-  uint8_t bin[4];
+  uint8_t bin[4] = {0};
   uint8_t i = 0;
     while (floor > 0) {
         bin[i] = floor % 2;
@@ -112,17 +115,19 @@ void vModbusComTask(void *pvParameters){
 
 void vAimTask(void *pvParameters){
   for(;;){
+      RTU_SLAVE.task();
       int target = encode_aiming();
       if(target != 0){
         writeBit(package, 0, 1);                                  //dont forget to set 0 by STM after complete all cmd
         writeBit(package, target, 1);
-        xTimerStart(xHoldStateTimer, 0);
+        //xTimerStart(xHoldStateTimer, 0);
+        RTU_SLAVE.Hreg(1, package);
       }
       vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
   
-void vDisplayTask(){
+void vDisplayTask(void *pvParameters){
   uint16_t state[16];
   for(;;){
 
@@ -135,7 +140,7 @@ void vDisplayTask(){
       pos_display(pos);
 
       for(int i = 6; i <= 13; i++){
-          WAIT_IN_QUEUE(i, state[i]);
+          WAIT_IN_QUEUE(queuePins[i], state[i]);
       }
     }
 
@@ -143,9 +148,9 @@ void vDisplayTask(){
   }
 }
 
-void vHoldStateCallback(TimerHandle_t xTimer) {
+// void vHoldStateCallback(TimerHandle_t xTimer) {
   
-}
+// }
 
 void setup() {
   Serial.begin(115200);
@@ -180,8 +185,11 @@ void setup() {
   pinMode(UP, OUTPUT);  
 
   xDisplayQueue = xQueueCreate(8, sizeof(parsing_data));  //handler for evnet queue
-  xTaskCreate(vAimTask, "AimButtonHandle", 2048, NULL, 3, NULL);
-  xHoldStateTimer = xTimerCreate("HoldState", pdMS_TO_TICKS(1000), pdFALSE, 0, vHoldStateCallback);    
+  xTaskCreate(vAimTask, "AimButtonHandle", 1024, NULL, 3, NULL);
+  xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
+  xTaskCreate(vDisplayTask, "Display", 1024, NULL, 3, NULL);
+
+  //xHoldStateTimer = xTimerCreate("HoldState", pdMS_TO_TICKS(1000), pdFALSE, 0, vHoldStateCallback);    
 }
 
 void loop() {
