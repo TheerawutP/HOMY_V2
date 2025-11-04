@@ -5,7 +5,7 @@
 //output
 #define EMER_L 26
 #define BELL_L 14
-#define OP_L 19
+#define OP_L 19  
 #define CL_L 18
 #define HLD_L 5
 #define EN 23
@@ -13,9 +13,9 @@
 //#define SPD     //on speed 2 
 
 //input
-#define pin_open 32
+#define pin_open 32     
 #define pin_close 33  
-#define pin_hold 25  
+#define pin_hold 25    
 #define pin_bell 36
 #define pin_emer 39
 //#define landing
@@ -49,6 +49,8 @@ typedef struct{
 }DoorState_t;
 
 DoorState_t doorState = {DOOR_IDLE, DOOR_IDLE};
+volatile TickType_t lastHoldISR = 0;
+const TickType_t holdDebounceTicks = pdMS_TO_TICKS(50); // 50 ms debounce
 
 
 QueueHandle_t xButtonQueue;
@@ -85,17 +87,17 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
 }
 
 void Door_Open(){
-   digitalWrite(EN, HIGH);
-   digitalWrite(FR, HIGH);
-}
-
-void Door_Close(){
-   digitalWrite(EN, HIGH);
+   digitalWrite(EN, LOW);
    digitalWrite(FR, LOW);
 }
 
-void Door_Stay(){
+void Door_Close(){
    digitalWrite(EN, LOW);
+   digitalWrite(FR, HIGH);
+}
+
+void Door_Stay(){
+   digitalWrite(EN, HIGH);
 }
 
 //extract bit 0-15 from Written Hreg into array 
@@ -219,6 +221,10 @@ void vDoorControlTask(void *pvParameters) {
 
 void vLastStateCallback(TimerHandle_t xTimer) {
   doorState.now_state = doorState.pre_state;
+    if (doorState.now_state == DOOR_OPEN)
+    Door_Open();
+  else if (doorState.now_state == DOOR_CLOSE)
+    Door_Close();
 }
 
 void ISR_Open() {
@@ -231,17 +237,25 @@ void ISR_Open() {
 
 void ISR_Hold() {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  ButtonEvent_t evt = BTN_HOLD;
+  ButtonEvent_t evt;
+  TickType_t now = xTaskGetTickCountFromISR();
+  if ((now - lastHoldISR) < holdDebounceTicks) return;
+  lastHoldISR = now;
+  if(digitalRead(pin_hold) == 0){
+       evt = BTN_HOLD;
+  }else{
+       evt = BTN_RELEASE_HOLD;
+  }
   xQueueSendFromISR(xButtonQueue, &evt, &xHigherPriorityTaskWoken);
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-void ISR_Release_Hold() {
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  ButtonEvent_t evt = BTN_RELEASE_HOLD;
-  xQueueSendFromISR(xButtonQueue, &evt, &xHigherPriorityTaskWoken);
-  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}
+// void ISR_Release_Hold() {
+//   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//   ButtonEvent_t evt = BTN_RELEASE_HOLD;
+//   xQueueSendFromISR(xButtonQueue, &evt, &xHigherPriorityTaskWoken);
+//   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+// }
 
 void ISR_Close() {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -345,6 +359,8 @@ void setup() {
   pinMode(EN, OUTPUT);
   pinMode(FR, OUTPUT);
 
+  digitalWrite(EN, HIGH);
+  digitalWrite(FR, HIGH);
   xButtonQueue = xQueueCreate(10, sizeof(ButtonEvent_t));  //handler for evnet queue
   //xModbusQueue = xQueueCreate(20, sizeof()); //16 = uint16_t     
   xLastStateTimer = xTimerCreate("LastState", pdMS_TO_TICKS(1500), pdFALSE, 0, vLastStateCallback);    
