@@ -22,6 +22,9 @@
 #define DOWN 4
 #define UP 5
 
+#define goto_f1 27
+#define goto_f2 14
+#define goto_f3 15
 
 #define DW_LAMP(obj) digitalWrite(DOWN,obj)
 #define UP_LAMP(obj) digitalWrite(UP,obj)
@@ -89,7 +92,6 @@ int encode_aiming(){
   int bit2 = digitalRead(ss_bit2);
   int bit3 = digitalRead(ss_bit3);
   return (bit3 << 3) | (bit2 << 2) | (bit1 << 1) | bit0;
-;
 }
 
 void vModbusComTask(void *pvParameters){
@@ -116,13 +118,35 @@ void vModbusComTask(void *pvParameters){
 void vAimTask(void *pvParameters){
   for(;;){
       RTU_SLAVE.task();
-      int target = encode_aiming();
-      if(target != 0){
-        writeBit(package, 0, 1);                                  //dont forget to set 0 by STM after complete all cmd
-        writeBit(package, target, 1);
-        //xTimerStart(xHoldStateTimer, 0);
-        RTU_SLAVE.Hreg(1, package);
-      }
+      // int target = encode_aiming();
+      // if(target != 0){
+      //   writeBit(package, 0, 1);                                  //dont forget to set 0 by STM after complete all cmd
+      //   writeBit(package, target, 1);
+      //   //xTimerStart(xHoldStateTimer, 0);
+      //   RTU_SLAVE.Hreg(1, package);
+
+      int f1 = digitalRead(goto_f1);
+      int f2 = digitalRead(goto_f2);
+      int f3 = digitalRead(goto_f3);
+
+        if(f1 == 1){
+          writeBit(package, 0, 1);                                  
+          writeBit(package, 1, 1);
+          RTU_SLAVE.Hreg(1, package);
+        }
+
+        if(f2 == 1){
+          writeBit(package, 0, 1);                                  
+          writeBit(package, 2, 1);
+          RTU_SLAVE.Hreg(1, package);
+        }
+
+        if(f3 == 1){
+          writeBit(package, 0, 1);                                  
+          writeBit(package, 3, 1);
+          RTU_SLAVE.Hreg(1, package);
+        }
+      
       vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
@@ -173,14 +197,18 @@ void setup() {
   pinMode(ss_bit1, INPUT_PULLUP); 
   // pinMode(ss_bit0, INPUT);   
   // pinMode(ss_bit1, INPUT);    
-  pinMode(ss_bit2, INPUT);    
-  pinMode(ss_bit3, INPUT);   
+  pinMode(ss_bit2, INPUT_PULLUP);    
+  pinMode(ss_bit3, INPUT_PULLUP);   
+
+  pinMode(goto_f1, INPUT_PULLUP);
+  pinMode(goto_f2, INPUT_PULLUP);
+  pinMode(goto_f2, INPUT_PULLUP);
 
   pinMode(segB0, OUTPUT);   
   pinMode(segB1, OUTPUT);   
   pinMode(segB2, OUTPUT);    
   pinMode(segB3, OUTPUT);    
-
+  
   pinMode(DOWN, OUTPUT);    
   pinMode(UP, OUTPUT);  
 

@@ -20,6 +20,11 @@
 #define pin_emer 39
 //#define landing
 
+#define RUN HIGH
+#define STOP LOW 
+#define FORWARD LOW
+#define REVERSE HIGH
+
 //evnet types 
 typedef enum {
     BTN_OPEN,
@@ -89,20 +94,20 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
 void Door_Open(){
   //  digitalWrite(EN, LOW);
   //  digitalWrite(FR, LOW);
-   digitalWrite(EN, HIGH);
-   digitalWrite(FR, HIGH);
+   digitalWrite(EN, RUN);
+   digitalWrite(FR, FORWARD);
 }
 
 void Door_Close(){
   //  digitalWrite(EN, LOW);
   //  digitalWrite(FR, HIGH);
-    digitalWrite(EN, HIGH);
-   digitalWrite(FR, LOW);
+    digitalWrite(EN, RUN);
+   digitalWrite(FR, REVERSE);
 
 }
 
 void Door_Stay(){
-   digitalWrite(EN, LOW);
+   digitalWrite(EN, STOP);
 }
 
 //extract bit 0-15 from Written Hreg into array 
