@@ -87,17 +87,22 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
 }
 
 void Door_Open(){
-   digitalWrite(EN, LOW);
-   digitalWrite(FR, LOW);
-}
-
-void Door_Close(){
-   digitalWrite(EN, LOW);
+  //  digitalWrite(EN, LOW);
+  //  digitalWrite(FR, LOW);
+   digitalWrite(EN, HIGH);
    digitalWrite(FR, HIGH);
 }
 
+void Door_Close(){
+  //  digitalWrite(EN, LOW);
+  //  digitalWrite(FR, HIGH);
+    digitalWrite(EN, HIGH);
+   digitalWrite(FR, LOW);
+
+}
+
 void Door_Stay(){
-   digitalWrite(EN, HIGH);
+   digitalWrite(EN, LOW);
 }
 
 //extract bit 0-15 from Written Hreg into array 
@@ -359,8 +364,8 @@ void setup() {
   pinMode(EN, OUTPUT);
   pinMode(FR, OUTPUT);
 
-  digitalWrite(EN, HIGH);
-  digitalWrite(FR, HIGH);
+  // digitalWrite(EN, HIGH);
+  // digitalWrite(FR, HIGH);
   xButtonQueue = xQueueCreate(10, sizeof(ButtonEvent_t));  //handler for evnet queue
   //xModbusQueue = xQueueCreate(20, sizeof()); //16 = uint16_t     
   xLastStateTimer = xTimerCreate("LastState", pdMS_TO_TICKS(1500), pdFALSE, 0, vLastStateCallback);    
