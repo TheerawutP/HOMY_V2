@@ -16,8 +16,8 @@
 #define seg_bit_3 36 //26
 
 //INPUT
-#define SW_DW 25 //36
-#define SW_UP 26 //39
+#define SW_DW 19 //25 //36
+#define SW_UP 18 //26 //39
 #define SS 27 //34
 
 TaskHandle_t xCallingButtonTaskHandle;
@@ -189,28 +189,43 @@ void vCallingButtonTask(void *pvParam){
             //     }
             //     RTU_SLAVE.Hreg(1, package);
             //     break;
-            if (val == SW_UP) {
-                // Keep setting bit as long as button is pressed
-                while(digitalRead(SW_UP) == LOW) {
-                    writeBit(package, 9, 1);
-                    RTU_SLAVE.Hreg(1, package);
-                    vTaskDelay(pdMS_TO_TICKS(50)); // Poll every 50ms
-                }
-                // Button released, clear bit
-                writeBit(package, 9, 0);
-                RTU_SLAVE.Hreg(1, package);
-            }
+
+
+            // if (val == SW_UP) {
+            //     // Keep setting bit as long as button is pressed
+            //     while(digitalRead(SW_UP) == LOW) {
+            //         writeBit(package, 9, 1);
+            //         RTU_SLAVE.Hreg(1, package);
+            //         vTaskDelay(pdMS_TO_TICKS(50)); // Poll every 50ms
+            //     }
+            //     // Button released, clear bit
+            //     writeBit(package, 9, 0);
+            //     RTU_SLAVE.Hreg(1, package);
+            // }
             
-            if (val == SW_DW) {
-                // Keep setting bit as long as button is pressed
-                while(digitalRead(SW_DW) == LOW) {
-                    writeBit(package, 10, 1);
-                    RTU_SLAVE.Hreg(1, package);
-                    vTaskDelay(pdMS_TO_TICKS(50)); // Poll every 50ms
-                }
-                // Button released, clear bit
-                writeBit(package, 10, 0);
-                RTU_SLAVE.Hreg(1, package);
+            // if (val == SW_DW) {
+            //     // Keep setting bit as long as button is pressed
+            //     while(digitalRead(SW_DW) == LOW) {
+            //         writeBit(package, 10, 1);
+            //         RTU_SLAVE.Hreg(1, package);
+            //         vTaskDelay(pdMS_TO_TICKS(50)); // Poll every 50ms
+            //     }
+            //     // Button released, clear bit
+            //     writeBit(package, 10, 0);
+            //     RTU_SLAVE.Hreg(1, package);
+            // }
+
+
+            if(val == SW_UP){
+                writeBit(package, 9, 1);
+                RTU_SLAVE.Hreg(1, package);   
+                xStartTimer(xHoldStateTimer, 0);        
+            }
+
+            if(val == SW_DW){
+                writeBit(package, 10, 1);
+                RTU_SLAVE.Hreg(1, package);    
+                xStartTimer(xHoldStateTimer, 0);               
             }
 
 
@@ -227,7 +242,7 @@ void vCallingButtonTask(void *pvParam){
 //   }
 // }
 
-void vHoldButton(TimerHandle_t xTimer) {
+void vHoldState(TimerHandle_t xTimer) {
     // if(digitalRead(SW_UP) == HIGH){
     //   writeBit(package, 9, 0);      
     // }
@@ -283,11 +298,11 @@ void setup() {
 
   //calling up&dw
   pinMode(SW_DW, INPUT_PULLUP);   
-  attachInterrupt(digitalPinToInterrupt(SW_DW), ISR_CALL_DW, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(SW_DW), ISR_CALL_DW, FALLING);
 
 
   pinMode(SW_UP, INPUT_PULLUP);    
-  attachInterrupt(digitalPinToInterrupt(SW_UP), ISR_CALL_UP, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(SW_UP), ISR_CALL_UP, FALLING);
 
   pinMode(SS, INPUT_PULLUP);    
 
@@ -306,7 +321,7 @@ void setup() {
   xProcessQueue = xQueueCreate(10, sizeof(parsing_data));
   xTaskCreate(vProcessTask, "Processing", 1024, NULL, 3, NULL);
   xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
-  xHoldButtonTimer = xTimerCreate("Hold_Button", pdMS_TO_TICKS(500), pdFALSE, 0, vHoldButton);
+  xHoldStateTimer = xTimerCreate("Hold_State", pdMS_TO_TICKS(1500), pdFALSE, 0, vHoldButton);
 
   xTaskCreate(
     vCallingButtonTask,         
