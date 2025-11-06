@@ -22,7 +22,7 @@
 
 TaskHandle_t xCallingButtonTaskHandle;
 QueueHandle_t xProcessQueue;
-TimerHandle_t xHoldButtonTimer;
+TimerHandle_t xClearStateTimer;
 typedef enum {
     DOOR_CLOSING,
     DOOR_OPENING,
@@ -219,13 +219,13 @@ void vCallingButtonTask(void *pvParam){
             if(val == SW_UP){
                 writeBit(package, 9, 1);
                 RTU_SLAVE.Hreg(1, package);   
-                xStartTimer(xHoldStateTimer, 0);        
+                xTimerStart(xClearStateTimer, 0);        
             }
 
             if(val == SW_DW){
                 writeBit(package, 10, 1);
                 RTU_SLAVE.Hreg(1, package);    
-                xStartTimer(xHoldStateTimer, 0);               
+                xTimerStart(xClearStateTimer, 0);               
             }
 
 
@@ -242,7 +242,7 @@ void vCallingButtonTask(void *pvParam){
 //   }
 // }
 
-void vHoldState(TimerHandle_t xTimer) {
+void vClearStateCallback(TimerHandle_t xTimer) {
     // if(digitalRead(SW_UP) == HIGH){
     //   writeBit(package, 9, 0);      
     // }
@@ -321,7 +321,7 @@ void setup() {
   xProcessQueue = xQueueCreate(10, sizeof(parsing_data));
   xTaskCreate(vProcessTask, "Processing", 1024, NULL, 3, NULL);
   xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
-  xHoldStateTimer = xTimerCreate("Hold_State", pdMS_TO_TICKS(1500), pdFALSE, 0, vHoldButton);
+  xClearStateTimer = xTimerCreate("Clear_State", pdMS_TO_TICKS(1500), pdFALSE, 0, vClearStateCallback);
 
   xTaskCreate(
     vCallingButtonTask,         

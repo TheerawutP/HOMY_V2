@@ -31,7 +31,7 @@
 #define WAIT_IN_QUEUE(state, obj) digitalWrite(state ,obj)
 
 QueueHandle_t xDisplayQueue;
-TimerHandle_t xHoldStateTimer;
+TimerHandle_t xClearStateTimer;
 ModbusRTU RTU_SLAVE;
 uint16_t lastSVal;
 uint16_t parsing_data[16];
@@ -83,7 +83,6 @@ void pos_display(uint8_t floor){
   digitalWrite(segB1, bin[1]);
   digitalWrite(segB2, bin[2]);
   digitalWrite(segB3, bin[3]);
-
 }
 
 int encode_aiming(){
@@ -124,6 +123,9 @@ void vAimTask(void *pvParameters){
       //   writeBit(package, target, 1);
       //   //xTimerStart(xHoldStateTimer, 0);
       //   RTU_SLAVE.Hreg(1, package);
+      for(int i = 1; i<=8; i++){
+        writeBit(package, i, parsing_data[i]);
+      }
 
       int f1 = digitalRead(goto_f1);
       int f2 = digitalRead(goto_f2);
@@ -131,20 +133,24 @@ void vAimTask(void *pvParameters){
 
         if(f1 == 1){
           writeBit(package, 0, 1);                                  
-          writeBit(package, 1, 1);
+          writeBit(package, 1, 1);                                  
           RTU_SLAVE.Hreg(1, package);
+          xTimerStart(xClearStateTimer, 0);
         }
 
         if(f2 == 1){
           writeBit(package, 0, 1);                                  
           writeBit(package, 2, 1);
           RTU_SLAVE.Hreg(1, package);
+          xTimerStart(xClearStateTimer, 0);
+
         }
 
         if(f3 == 1){
           writeBit(package, 0, 1);                                  
           writeBit(package, 3, 1);
           RTU_SLAVE.Hreg(1, package);
+          xTimerStart(xClearStateTimer, 0);
         }
       
       vTaskDelay(pdMS_TO_TICKS(10));
@@ -172,9 +178,14 @@ void vDisplayTask(void *pvParameters){
   }
 }
 
-// void vHoldStateCallback(TimerHandle_t xTimer) {
-  
-// }
+void vClearStateCallback(TimerHandle_t xTimer) {
+          //active status bit
+          writeBit(package, 0, 0);
+          //aim to
+          writeBit(package, 1, 0);
+          writeBit(package, 2, 0);     
+          writeBit(package, 3, 0);   
+}
 
 void setup() {
   Serial.begin(115200);
@@ -216,8 +227,7 @@ void setup() {
   xTaskCreate(vAimTask, "AimButtonHandle", 1024, NULL, 3, NULL);
   xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
   xTaskCreate(vDisplayTask, "Display", 1024, NULL, 3, NULL);
-
-  //xHoldStateTimer = xTimerCreate("HoldState", pdMS_TO_TICKS(1000), pdFALSE, 0, vHoldStateCallback);    
+  xClearStateTimer = xTimerCreate("Clear_State", pdMS_TO_TICKS(1000), pdFALSE, 0, vClearStateCallback);    
 }
 
 void loop() {
