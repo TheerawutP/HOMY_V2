@@ -116,7 +116,6 @@ void vModbusComTask(void *pvParameters){
 
 void vAimTask(void *pvParameters){
   for(;;){
-      RTU_SLAVE.task();
       // int target = encode_aiming();
       // if(target != 0){
       //   writeBit(package, 0, 1);                                  //dont forget to set 0 by STM after complete all cmd
@@ -134,25 +133,19 @@ void vAimTask(void *pvParameters){
         if(f1 == 1){
           writeBit(package, 0, 1);                                  
           writeBit(package, 1, 1);                                  
-          RTU_SLAVE.Hreg(1, package);
-          xTimerStart(xClearStateTimer, 0);
         }
 
         if(f2 == 1){
           writeBit(package, 0, 1);                                  
           writeBit(package, 2, 1);
-          RTU_SLAVE.Hreg(1, package);
-          xTimerStart(xClearStateTimer, 0);
-
         }
 
         if(f3 == 1){
           writeBit(package, 0, 1);                                  
           writeBit(package, 3, 1);
-          RTU_SLAVE.Hreg(1, package);
-          xTimerStart(xClearStateTimer, 0);
         }
-      
+      xTimerStart(xClearStateTimer, 0);
+      RTU_SLAVE.Hreg(1, package);
       vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
@@ -166,11 +159,11 @@ void vDisplayTask(void *pvParameters){
       DW_LAMP(state[0]);
       UP_LAMP(state[1]);
       
-      uint8_t pos = state[2] + (state[3]*2) + (state[4]*4) + (state[5]*8);
+      uint8_t pos = (state[5] << 3) | (state[4] << 2) | (state[3] << 1) | state[2];
       pos_display(pos);
 
-      for(int i = 6; i <= 13; i++){
-          WAIT_IN_QUEUE(queuePins[i], state[i]);
+      for(int i = 0; i < 6; i++){
+          WAIT_IN_QUEUE(queuePins[i], state[i + 6]);
       }
     }
 
@@ -184,7 +177,9 @@ void vClearStateCallback(TimerHandle_t xTimer) {
           //aim to
           writeBit(package, 1, 0);
           writeBit(package, 2, 0);     
-          writeBit(package, 3, 0);   
+          writeBit(package, 3, 0); 
+
+          RTU_SLAVE.Hreg(1, package);
 }
 
 void setup() {
@@ -204,16 +199,16 @@ void setup() {
   RTU_SLAVE.onSetHreg(0x0001, cbWrite); 
   RTU_SLAVE.onGetHreg(0x0001, cbRead); 
 
-  pinMode(ss_bit0, INPUT_PULLUP);   
-  pinMode(ss_bit1, INPUT_PULLUP); 
+  pinMode(ss_bit0, INPUT);   
+  pinMode(ss_bit1, INPUT); 
   // pinMode(ss_bit0, INPUT);   
   // pinMode(ss_bit1, INPUT);    
-  pinMode(ss_bit2, INPUT_PULLUP);    
-  pinMode(ss_bit3, INPUT_PULLUP);   
+  pinMode(ss_bit2, INPUT);    
+  pinMode(ss_bit3, INPUT);   
 
   pinMode(goto_f1, INPUT_PULLUP);
   pinMode(goto_f2, INPUT_PULLUP);
-  pinMode(goto_f2, INPUT_PULLUP);
+  pinMode(goto_f3, INPUT_PULLUP);
 
   pinMode(segB0, OUTPUT);   
   pinMode(segB1, OUTPUT);   
@@ -223,11 +218,19 @@ void setup() {
   pinMode(DOWN, OUTPUT);    
   pinMode(UP, OUTPUT);  
 
-  xDisplayQueue = xQueueCreate(8, sizeof(parsing_data));  //handler for evnet queue
-  xTaskCreate(vAimTask, "AimButtonHandle", 1024, NULL, 3, NULL);
-  xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
-  xTaskCreate(vDisplayTask, "Display", 1024, NULL, 3, NULL);
+  pinMode(out1, OUTPUT);
+  pinMode(out2, OUTPUT);
+  pinMode(out3, OUTPUT);
+  pinMode(out4, OUTPUT);
+  pinMode(out5, OUTPUT);
+  pinMode(out6, OUTPUT);
+
   xClearStateTimer = xTimerCreate("Clear_State", pdMS_TO_TICKS(1000), pdFALSE, 0, vClearStateCallback);    
+
+  xDisplayQueue = xQueueCreate(8, sizeof(parsing_data));  //handler for evnet queue
+  xTaskCreate(vAimTask, "AimButtonHandle", 2048, NULL, 3, NULL);
+  xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
+  xTaskCreate(vDisplayTask, "Display", 2048, NULL, 3, NULL);
 }
 
 void loop() {

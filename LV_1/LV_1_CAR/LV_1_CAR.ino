@@ -23,7 +23,10 @@ enum ModbusState {
     STATE_WRITE_CMD
 };
 
-ModbusState currentState = STATE_READ_SS; // Start the cycle immediately
+//ModbusState currentState = STATE_READ_SS; // Start the cycle immediately
+ModbusState currentState = STATE_READ_AIM; // Start the cycle immediately
+
+
 unsigned long nextActionTime = 0;
 const unsigned long ACTION_INTERVAL = 20;    // Time (ms) to wait between full cycles
 const unsigned long DELAY_BETWEEN_SLAVES = 20; // Short gap (ms) after a transaction finishes
@@ -63,10 +66,10 @@ uint16_t bit_IN_QUEUE[16] = {0};
  * Logs the received value.
  */
 uint16_t cbWrite(TRegister* reg, uint16_t val) {
-//   if (lastSVal != val) {
-//     lastSVal = val;
-//     Serial.println(String("HregSet val (from STM32):") + String(val));
-//   }
+  if (lastSVal != val) {
+    lastSVal = val;
+    Serial.println(String("HregSet val (from STM32):") + String(val));
+  }
   return val;
 }
 
@@ -152,24 +155,23 @@ void setup() {
   // SLAVE Register Setup for STM32 Master
   // Hreg 0x0000: Command register (Write by STM32, Read by CAR)
   RTU_SLAVE.addHreg(0x0000, 0); 
-RTU_SLAVE.onGetHreg(0x0000, cbRead); 
+  //RTU_SLAVE.onGetHreg(0x0000, cbRead); 
   RTU_SLAVE.onSetHreg(0x0000, cbWrite); 
   
   //RTU_SLAVE.onGetHreg(0x0000, cbWrite);
   
   // Hreg 0x0001: Status register (Write by CAR, Read by STM32)
   RTU_SLAVE.addHreg(0x0001, 0);  
-  //RTU_SLAVE.onSetHreg(0x0001, HoldregSet); 
-  RTU_SLAVE.onGetHreg(0x0001, cbRead); 
+  // RTU_SLAVE.onGetHreg(0x0001, cbRead); 
   RTU_SLAVE.onSetHreg(0x0001, cbWrite); 
 
   RTU_SLAVE.addHreg(0x0002, 0);  
   RTU_SLAVE.onGetHreg(0x0002, cbRead); 
-  RTU_SLAVE.onSetHreg(0x0002, cbWrite); 
+  // RTU_SLAVE.onSetHreg(0x0002, cbWrite); 
 
   RTU_SLAVE.addHreg(0x0003, 0);  
   RTU_SLAVE.onGetHreg(0x0003, cbRead); 
-  RTU_SLAVE.onSetHreg(0x0003, cbWrite); 
+  // RTU_SLAVE.onSetHreg(0x0003, cbWrite); 
 
 
     nextActionTime = millis();
@@ -231,10 +233,10 @@ void loop() {
   writeBit(wstate2, 4, bit_s[8]); 
   writeBit(wstate2, 5, bit_s[9]); 
   //confirm aiming
-  writeBit(wstate2, 6, bit_s[10]); 
-  writeBit(wstate2, 7, bit_s[11]); 
-  writeBit(wstate2, 8, bit_s[12]); 
-  writeBit(wstate2, 9, bit_s[13]); 
+  // writeBit(wstate2, 6, bit_s[10]); 
+  // writeBit(wstate2, 7, bit_s[11]); 
+  // writeBit(wstate2, 8, bit_s[12]); 
+  // writeBit(wstate2, 9, bit_s[13]); 
 
   wstate3 = (ss_read>>4);
 
@@ -253,21 +255,21 @@ void loop() {
 
   // 3. Modbus Master State Machine (Politely communicating with AIM/DOOR)
   switch (currentState) {
-    case STATE_READ_SS: // Read Hreg 1 from SENSOR_BOARD (Slave ID 1)
-        node.begin(SENSOR_BOARD, Serial2);
-        result = node.readHoldingRegisters(0x0001, 1);
-        handleMasterReadResult(SENSOR_BOARD, result, ss_read, "SENSOR_BOARD");
-        currentState = STATE_WRITE_SS;
-        nextActionTime = now + DELAY_BETWEEN_SLAVES; 
-        break;
+    // case STATE_READ_SS: // Read Hreg 1 from SENSOR_BOARD (Slave ID 1)
+    //     node.begin(SENSOR_BOARD, Serial2);
+    //     result = node.readHoldingRegisters(0x0001, 1);
+    //     handleMasterReadResult(SENSOR_BOARD, result, ss_read, "SENSOR_BOARD");
+    //     currentState = STATE_WRITE_SS;
+    //     nextActionTime = now + DELAY_BETWEEN_SLAVES; 
+    //     break;
 
-    case STATE_WRITE_SS: // Write Hreg 0 to SENSOR_BOARD (Slave ID 1)
-        node.begin(SENSOR_BOARD, Serial2);
-        result = node.writeSingleRegister(0x0000, wstate1); 
-        handleMasterWriteResult(SENSOR_BOARD, result, wstate1, "SENSOR_BOARD");
-        currentState = STATE_READ_AIM;
-        nextActionTime = now + DELAY_BETWEEN_SLAVES;
-        break;
+    // case STATE_WRITE_SS: // Write Hreg 0 to SENSOR_BOARD (Slave ID 1)
+    //     node.begin(SENSOR_BOARD, Serial2);
+    //     result = node.writeSingleRegister(0x0000, wstate1); 
+    //     handleMasterWriteResult(SENSOR_BOARD, result, wstate1, "SENSOR_BOARD");
+    //     currentState = STATE_READ_AIM;
+    //     nextActionTime = now + DELAY_BETWEEN_SLAVES;
+    //     break;
         
     case STATE_READ_AIM: // Read Hreg 1 from AIM_BOARD (Slave ID 2)
         node.begin(AIM_BOARD, Serial2);
@@ -282,29 +284,31 @@ void loop() {
         result = node.writeSingleRegister(0x0000, wstate2);
         handleMasterWriteResult(AIM_BOARD, result, wstate2, "AIM_BOARD");
         // Cycle back to the start of the polling loop
-        currentState = STATE_READ_CMD; 
+        // currentState = STATE_READ_CMD; 
+        currentState = STATE_IDLE;
         nextActionTime = now + DELAY_BETWEEN_SLAVES;
         break;
 
-    case STATE_READ_CMD: 
-        node.begin(CMD_BOARD, Serial2);
-        result = node.readHoldingRegisters(0x0001, 1);
-        handleMasterReadResult(CMD_BOARD, result, cmd_read, "CMD_BOARD");
-        currentState = STATE_WRITE_CMD;
-        nextActionTime = now + DELAY_BETWEEN_SLAVES; 
-        break;
+    // case STATE_READ_CMD: 
+    //     node.begin(CMD_BOARD, Serial2);
+    //     result = node.readHoldingRegisters(0x0001, 1);
+    //     handleMasterReadResult(CMD_BOARD, result, cmd_read, "CMD_BOARD");
+    //     currentState = STATE_WRITE_CMD;
+    //     nextActionTime = now + DELAY_BETWEEN_SLAVES; 
+    //     break;
 
-    case STATE_WRITE_CMD: 
-        node.begin(CMD_BOARD, Serial2);
-        result = node.writeSingleRegister(0x0000, wstate3); 
-        handleMasterWriteResult(CMD_BOARD, result, wstate3, "CMD_BOARD");
-        currentState = STATE_IDLE;
-        nextActionTime = now + ACTION_INTERVAL;
-        break;
+    // case STATE_WRITE_CMD: 
+    //     node.begin(CMD_BOARD, Serial2);
+    //     result = node.writeSingleRegister(0x0000, wstate3); 
+    //     handleMasterWriteResult(CMD_BOARD, result, wstate3, "CMD_BOARD");
+    //     currentState = STATE_IDLE;
+    //     nextActionTime = now + ACTION_INTERVAL;
+    //     break;
     
     case STATE_IDLE: 
         // Wait for ACTION_INTERVAL before starting the next full cycle
-        currentState = STATE_READ_SS;
+        //currentState = STATE_READ_SS;
+        currentState = STATE_READ_AIM;
         // nextActionTime is set in the previous state.
         break;
   }
