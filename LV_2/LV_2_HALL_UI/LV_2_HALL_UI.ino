@@ -1,6 +1,6 @@
 #include <ModbusRTU.h>
 #include <math.h>
-#define SLAVE 1
+#define SLAVE 3
 
 //OUTPUT
 #define PB_DW_LAMP 23

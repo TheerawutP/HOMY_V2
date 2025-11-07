@@ -94,10 +94,10 @@ typedef struct{
 
 NewSlave CAR_STA = {
 		.slaveID = 0x01,
-		.start_address_readHreg = 0x0001,
-		.num_readHreg = 0x0001,
+		.start_address_readHreg = 0x0002,
+		.num_readHreg = 0x0002,
 		.start_address_writeHreg = 0x0000,
-		.num_writeHreg = 0x0001,
+		.num_writeHreg = 0x0002,
 };
 
 NewSlave HALL_STA = {
@@ -205,11 +205,20 @@ osTimerId_t xStartTransitTimerHandle;
 const osTimerAttr_t xStartTransitTimer_attributes = {
   .name = "xStartTransitTimer"
 };
+/* Definitions for xReachTimer */
+osTimerId_t xReachTimerHandle;
+const osTimerAttr_t xReachTimer_attributes = {
+  .name = "xReachTimer"
+};
 /* USER CODE BEGIN PV */
 uint8_t RxData[32];
 uint8_t read_TxFrame[16][32];
+uint8_t write_TxFrame[16][32];
 uint8_t read_RxFrame[16][32];
+uint16_t CAR_TxFrame[16];
+uint16_t HALL_TxFrame[16];
 current_slave read_state = CAR;
+current_slave write_state = CAR;
 
 QueueHandle_t xUART_QueueHandle;
 QueueHandle_t xServe_QueueHandle;
@@ -230,6 +239,7 @@ void vUART_Write(void *argument);
 void vUART_Read(void *argument);
 void vProcess(void *argument);
 void vStartTransit(void *argument);
+void vReach(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -261,7 +271,13 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 
 }
 
-
+void writeBit(uint16_t *package, uint8_t loc, uint8_t ref){
+    if (ref) {
+        *package = *package | (ref << loc);      // set
+    } else {
+        *package = *package & (ref << loc);     // clear
+    }
+}
 void parseEndian(uint16_t val, uint8_t *hi, uint8_t *lo){
      *hi = (val >> 8) & 0xFF;
      *lo = val & 0xFF;
@@ -470,7 +486,10 @@ int main(void)
 
   /* Create the timer(s) */
   /* creation of xStartTransitTimer */
-  xStartTransitTimerHandle = osTimerNew(vStartTransit, osTimerPeriodic, NULL, &xStartTransitTimer_attributes);
+  xStartTransitTimerHandle = osTimerNew(vStartTransit, osTimerOnce, NULL, &xStartTransitTimer_attributes);
+
+  /* creation of xReachTimer */
+  xReachTimerHandle = osTimerNew(vReach, osTimerOnce, NULL, &xReachTimer_attributes);
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
@@ -723,8 +742,10 @@ void vServeQueue(void *argument)
 		    {
 				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
 					if(elevatorQueueManage(&cabin_1, request, &queue_UP, &queue_DW)){
-		                if(cabin_1.dir == IDLE) osTimerStart(xStartTransitTimerHandle, 6000);
-		                else osTimerStart(xStartTransitTimerHandle, 100);
+		                if(cabin_1.dir == IDLE){
+		                	osTimerStart(xStartTransitTimerHandle, 6000);
+		                }
+		                else osTimerStart(xStartTransitTimerHandle, 0);
 					}
 		            xSemaphoreGive(xQueueMutex);
 				}
@@ -793,13 +814,11 @@ void vTransit(void *argument)
 		      xSemaphoreGive(xQueueMutex);
 		  }
 
-		  //servo_1.dir = cabin_1.dir;
-		   while(cabin_1.pos != dest){
-			  //servo.rotate();
-			  vTaskDelay(pdMS_TO_TICKS(10));
-			}
 
-		   xSemaphoreGive(xTransitDoneSem); //done transit flag
+		   //mocking cabin transit
+		  osTimerStart(xReachTimerHandle, 5000);
+
+		  //xSemaphoreGive(xTransitDoneSem); //done transit flag
 	  }
   }
   /* USER CODE END vTransit */
@@ -816,9 +835,79 @@ void vUART_Write(void *argument)
 {
   /* USER CODE BEGIN vUART_Write */
   /* Infinite loop */
+  uint8_t len;
+  uint8_t up;
+  uint8_t dw;
+  uint8_t idle;
+
   for(;;)
   {
-    osDelay(1);
+
+	  	switch(cabin_1.dir){
+	  	case UP:
+	  		up = 1;
+	  		dw = 0;
+	  		idle = 0;
+	  		break;
+
+	  	case DOWN:
+	  		up = 0;
+	  		dw = 1;
+	  		idle = 0;
+	  		break;
+
+	  	case IDLE:
+	  		up = 0;
+	  		dw = 0;
+	  		idle = 1;
+	  		break;
+	  	}
+
+	  	uint8_t pos_b0 = (cabin_1.pos>>0) & 1;
+	  	uint8_t pos_b1 = (cabin_1.pos>>1) & 1;
+	  	uint8_t pos_b2 = (cabin_1.pos>>2) & 1;
+	  	uint8_t pos_b3 = (cabin_1.pos>>3) & 1;
+
+		switch (write_state){
+			case CAR:
+				//packing for car
+				//car first frame
+				writeBit(&CAR_TxFrame[0], 4, dw); //dir dw
+				writeBit(&CAR_TxFrame[0], 5, up); //dir up
+				writeBit(&CAR_TxFrame[0], 6, pos_b0); //car pos b0
+				writeBit(&CAR_TxFrame[0], 7, pos_b1);
+				writeBit(&CAR_TxFrame[0], 8, pos_b2);
+				writeBit(&CAR_TxFrame[0], 9, pos_b3);
+
+				len = write_MultipleHreg(&CAR_STA, CAR_TxFrame, write_TxFrame[0]);
+				HAL_UART_Transmit(&huart1, write_TxFrame[0], len, RESPONSE_TIMEOUT);
+				break;
+
+			case HALL:
+				writeBit(&HALL_TxFrame[3], 0, dw); //dir dw
+				writeBit(&HALL_TxFrame[3], 1, up); //dir up
+				writeBit(&HALL_TxFrame[3], 2, pos_b0); //car pos b0
+				writeBit(&HALL_TxFrame[3], 3, pos_b1);
+				writeBit(&HALL_TxFrame[3], 4, pos_b2);
+				writeBit(&HALL_TxFrame[3], 5, pos_b3);
+
+				len = write_MultipleHreg(&HALL_STA, HALL_TxFrame, write_TxFrame[1]);
+				HAL_UART_Transmit(&huart1, write_TxFrame[1], len, RESPONSE_TIMEOUT);
+
+			case MQTT:
+//				len = read_Hreg(&MQTT_STA, read_TxFrame[2]);
+//				HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
+				read_state = DRIVER;
+				break;
+
+			case DRIVER:
+//				len = read_Hreg(&SERVO_DRIVER, read_TxFrame[3]);
+//				HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
+				read_state = CAR;
+				break;
+
+		}
+	  	vTaskDelay(pdMS_TO_TICKS(10));
   }
   /* USER CODE END vUART_Write */
 }
@@ -840,7 +929,7 @@ void vUART_Read(void *argument)
 		uint8_t len;
 		switch (read_state){
 			case CAR:
-				len = read_Hreg(&CAR_STA, read_TxFrame[0]);
+  				len = read_Hreg(&CAR_STA, read_TxFrame[0]);
 				HAL_UART_Transmit(&huart1, read_TxFrame[0], len, RESPONSE_TIMEOUT);
 				read_state = HALL;
 				break;
@@ -897,7 +986,6 @@ void vProcess(void *argument)
       uint16_t val_car = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
       extractBits(val_car, car_aiming, cabin_1.max_fl);
 
-
 	  if(hall_calling_UP[0] == 1){
 		 for(int i = 1; i<=8; i++){
 			 if(hall_calling_UP[i] == 1){
@@ -942,6 +1030,14 @@ void vStartTransit(void *argument)
   /* USER CODE BEGIN vStartTransit */
 	xSemaphoreGive(xQueueSem);
   /* USER CODE END vStartTransit */
+}
+
+/* vReach function */
+void vReach(void *argument)
+{
+  /* USER CODE BEGIN vReach */
+	xSemaphoreGive(xTransitDoneSem);
+  /* USER CODE END vReach */
 }
 
 /**
