@@ -251,6 +251,10 @@ void vReach(void *argument);
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
 
+	if(RxData[1] != 0x03){
+			HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+		return;
+	}
 	UART_Frame localBuf;
 	uint16_t crc_received = RxData[Size - 2] | (RxData[Size - 1] << 8);
 	uint16_t crc_calculated = crc16(RxData, Size - 2);
@@ -271,11 +275,11 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 
 }
 
-void writeBit(uint16_t *package, uint8_t loc, uint8_t ref){
-    if (ref) {
-        *package = *package | (ref << loc);      // set
+void writeBit(uint16_t *package, uint8_t loc, uint8_t state){
+    if (state) {
+        *package = *package | (1 << loc);      // set
     } else {
-        *package = *package & (ref << loc);     // clear
+        *package = *package & ~(1 << loc);     // clear
     }
 }
 void parseEndian(uint16_t val, uint8_t *hi, uint8_t *lo){
@@ -444,6 +448,7 @@ int main(void)
   xServe_QueueHandle = xQueueCreate(32, sizeof(transitReq));
   xQueueMutex = xSemaphoreCreateMutex();
   xQueueSem = xSemaphoreCreateBinary();
+  xTransitDoneSem = xSemaphoreCreateBinary();
 
 
   /* USER CODE END 1 */
@@ -881,6 +886,7 @@ void vUART_Write(void *argument)
 
 				len = write_MultipleHreg(&CAR_STA, CAR_TxFrame, write_TxFrame[0]);
 				HAL_UART_Transmit(&huart1, write_TxFrame[0], len, RESPONSE_TIMEOUT);
+				write_state = HALL;
 				break;
 
 			case HALL:
@@ -893,17 +899,18 @@ void vUART_Write(void *argument)
 
 				len = write_MultipleHreg(&HALL_STA, HALL_TxFrame, write_TxFrame[1]);
 				HAL_UART_Transmit(&huart1, write_TxFrame[1], len, RESPONSE_TIMEOUT);
-
+				write_state = MQTT;
+				break;
 			case MQTT:
 //				len = read_Hreg(&MQTT_STA, read_TxFrame[2]);
 //				HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
-				read_state = DRIVER;
+				write_state = DRIVER;
 				break;
 
 			case DRIVER:
 //				len = read_Hreg(&SERVO_DRIVER, read_TxFrame[3]);
 //				HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
-				read_state = CAR;
+				write_state = CAR;
 				break;
 
 		}
@@ -1010,7 +1017,7 @@ void vProcess(void *argument)
 
 	  if(car_aiming[0] == 1){
 		 for(int i = 1; i<=8; i++){
-			 if(hall_calling_UP[i] == 1){
+			 if(car_aiming[i] == 1){
 				 request.target = i;
 				 request.dir = DIR(cabin_1.pos, i); //macro
 				 request.requestBy = CABIN;
