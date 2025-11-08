@@ -107,6 +107,7 @@ NewSlave HALL_STA = {
 		.start_address_writeHreg = 0x0000,
 		.num_writeHreg = 0x0004,
 };
+
 NewSlave MQTT_STA = {
 		.slaveID = 0x03,
 		.start_address_readHreg = 0x0000,
@@ -114,6 +115,7 @@ NewSlave MQTT_STA = {
 		.start_address_writeHreg = 0x0000,
 		.num_writeHreg = 0x0001,
 };
+
 NewSlave SERVO_DRIVER = {
 		.slaveID = 0x7F,
 		.start_address_readHreg = 0x0000,

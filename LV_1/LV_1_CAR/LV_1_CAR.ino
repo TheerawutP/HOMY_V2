@@ -155,23 +155,23 @@ void setup() {
   // SLAVE Register Setup for STM32 Master
   // Hreg 0x0000: Command register (Write by STM32, Read by CAR)
   RTU_SLAVE.addHreg(0x0000, 0); 
-  //RTU_SLAVE.onGetHreg(0x0000, cbRead); 
+  RTU_SLAVE.onGetHreg(0x0000, cbRead); 
   RTU_SLAVE.onSetHreg(0x0000, cbWrite); 
   
   //RTU_SLAVE.onGetHreg(0x0000, cbWrite);
   
   // Hreg 0x0001: Status register (Write by CAR, Read by STM32)
   RTU_SLAVE.addHreg(0x0001, 0);  
-  // RTU_SLAVE.onGetHreg(0x0001, cbRead); 
+  RTU_SLAVE.onGetHreg(0x0001, cbRead); 
   RTU_SLAVE.onSetHreg(0x0001, cbWrite); 
 
   RTU_SLAVE.addHreg(0x0002, 0);  
   RTU_SLAVE.onGetHreg(0x0002, cbRead); 
-  // RTU_SLAVE.onSetHreg(0x0002, cbWrite); 
+  RTU_SLAVE.onSetHreg(0x0002, cbWrite); 
 
   RTU_SLAVE.addHreg(0x0003, 0);  
   RTU_SLAVE.onGetHreg(0x0003, cbRead); 
-  // RTU_SLAVE.onSetHreg(0x0003, cbWrite); 
+  RTU_SLAVE.onSetHreg(0x0003, cbWrite); 
 
 
     nextActionTime = millis();

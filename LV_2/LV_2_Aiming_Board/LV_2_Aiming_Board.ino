@@ -2,10 +2,10 @@
 #include <math.h>
 
 
-#define ss_bit0 36
-#define ss_bit1 39
-#define ss_bit2 34
-#define ss_bit3 35
+// #define ss_bit0 36
+// #define ss_bit1 39
+// #define ss_bit2 34
+// #define ss_bit3 35
 
 #define segB0 32
 #define segB1 33
@@ -85,13 +85,13 @@ void pos_display(uint8_t floor){
   digitalWrite(segB3, bin[3]);
 }
 
-int encode_aiming(){
-  int bit0 = digitalRead(ss_bit0);
-  int bit1 = digitalRead(ss_bit1);
-  int bit2 = digitalRead(ss_bit2);
-  int bit3 = digitalRead(ss_bit3);
-  return (bit3 << 3) | (bit2 << 2) | (bit1 << 1) | bit0;
-}
+// int encode_aiming(){
+//   int bit0 = digitalRead(ss_bit0);
+//   int bit1 = digitalRead(ss_bit1);
+//   int bit2 = digitalRead(ss_bit2);
+//   int bit3 = digitalRead(ss_bit3);
+//   return (bit3 << 3) | (bit2 << 2) | (bit1 << 1) | bit0;
+// }
 
 void vModbusComTask(void *pvParameters){
   for(;;){
@@ -130,17 +130,17 @@ void vAimTask(void *pvParameters){
       int f2 = digitalRead(goto_f2);
       int f3 = digitalRead(goto_f3);
 
-        if(f1 == 1){
+        if(f1 == 0){
           writeBit(package, 0, 1);                                  
           writeBit(package, 1, 1);                                  
         }
 
-        if(f2 == 1){
+        if(f2 == 0){
           writeBit(package, 0, 1);                                  
           writeBit(package, 2, 1);
         }
 
-        if(f3 == 1){
+        if(f3 == 0){
           writeBit(package, 0, 1);                                  
           writeBit(package, 3, 1);
         }
@@ -199,12 +199,10 @@ void setup() {
   RTU_SLAVE.onSetHreg(0x0001, cbWrite); 
   RTU_SLAVE.onGetHreg(0x0001, cbRead); 
 
-  pinMode(ss_bit0, INPUT);   
-  pinMode(ss_bit1, INPUT); 
   // pinMode(ss_bit0, INPUT);   
-  // pinMode(ss_bit1, INPUT);    
-  pinMode(ss_bit2, INPUT);    
-  pinMode(ss_bit3, INPUT);   
+  // pinMode(ss_bit1, INPUT); 
+  // pinMode(ss_bit2, INPUT);    
+  // pinMode(ss_bit3, INPUT);   
 
   pinMode(goto_f1, INPUT_PULLUP);
   pinMode(goto_f2, INPUT_PULLUP);
@@ -234,7 +232,15 @@ void setup() {
 }
 
 void loop() {
- 
+  //       int f1 = digitalRead(goto_f1);
+  //     int f2 = digitalRead(goto_f2);
+  //     int f3 = digitalRead(goto_f3);
+  // Serial.println(f1);
+  // Serial.println(f2);
+  // Serial.println(f3);
+  //       vTaskDelay(pdMS_TO_TICKS(1000));
+
+
 }
 
 
