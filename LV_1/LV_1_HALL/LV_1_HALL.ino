@@ -296,8 +296,8 @@ void loop() {
       // if(bit_r[i][8] == 1){ 
           //int sum = (bit_r[i][4] +  bit_r[i][4]*2 +  bit_r[i][4]*4 +  bit_r[i][4]*8)-1;
           writeBit(package, 0, bit_r[i][8]);      
-          writeBit(up_frame, i-1, bit_r[i][9]);    
-          writeBit(down_frame, i-1 , bit_r[i][10]);    
+          writeBit(up_frame, i, bit_r[i][9]);    
+          writeBit(down_frame, i , bit_r[i][10]);    
     // }  
   }
   

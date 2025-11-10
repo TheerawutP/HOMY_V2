@@ -94,7 +94,7 @@ typedef struct{
 
 NewSlave CAR_STA = {
 		.slaveID = 0x01,
-		.start_address_readHreg = 0x0002,
+		.start_address_readHreg = 0x0002,     // 0  1  / 2  3
 		.num_readHreg = 0x0002,
 		.start_address_writeHreg = 0x0000,
 		.num_writeHreg = 0x0002,
@@ -164,7 +164,7 @@ UART_HandleTypeDef huart2;
 osThreadId_t ParsingTaskHandle;
 const osThreadAttr_t ParsingTask_attributes = {
   .name = "ParsingTask",
-  .stack_size = 128 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for ServeQueueTask */
@@ -178,7 +178,7 @@ const osThreadAttr_t ServeQueueTask_attributes = {
 osThreadId_t TransitTaskHandle;
 const osThreadAttr_t TransitTask_attributes = {
   .name = "TransitTask",
-  .stack_size = 128 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for UART_WriteTask */
@@ -213,12 +213,12 @@ const osTimerAttr_t xReachTimer_attributes = {
   .name = "xReachTimer"
 };
 /* USER CODE BEGIN PV */
-uint8_t RxData[32];
-uint8_t read_TxFrame[16][32];
-uint8_t write_TxFrame[16][32];
-uint8_t read_RxFrame[16][32];
-uint16_t CAR_TxFrame[16];
-uint16_t HALL_TxFrame[16];
+uint8_t RxData[32] = {0};
+uint8_t read_TxFrame[16][32] = {0};
+uint8_t write_TxFrame[16][32] = {0};
+uint8_t read_RxFrame[16][32] = {0};
+uint16_t CAR_TxFrame[16] = {0};
+uint16_t HALL_TxFrame[16] = {0};
 current_slave read_state = CAR;
 current_slave write_state = CAR;
 
@@ -226,6 +226,7 @@ QueueHandle_t xUART_QueueHandle;
 QueueHandle_t xServe_QueueHandle;
 SemaphoreHandle_t xQueueSem;
 SemaphoreHandle_t xQueueMutex;
+SemaphoreHandle_t xUARTMutex;
 SemaphoreHandle_t xTransitDoneSem;
 /* USER CODE END PV */
 
@@ -252,7 +253,6 @@ void vReach(void *argument);
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-
 	if(RxData[1] != 0x03){
 			HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
 		return;
@@ -272,6 +272,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 	localBuf.size = Size;
 	    memcpy(localBuf.data, RxData, Size);
 	    xQueueSendFromISR(xUART_QueueHandle, &localBuf, NULL);
+	//memset(RxData, 0, sizeof(RxData));
+
 
 	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
 
@@ -284,6 +286,7 @@ void writeBit(uint16_t *package, uint8_t loc, uint8_t state){
         *package = *package & ~(1 << loc);     // clear
     }
 }
+
 void parseEndian(uint16_t val, uint8_t *hi, uint8_t *lo){
      *hi = (val >> 8) & 0xFF;
      *lo = val & 0xFF;
@@ -373,35 +376,35 @@ int isEmpty(SERVE_QUEUE *queue){
 int enqueue(transitReq task, SERVE_QUEUE *queue) {
     if(isFull(queue)) return 0;
 
-    int next = queue->rear + 1;
+    //int next = queue->rear + 1;
     queue->request[queue->rear] = task.target;
-    queue->rear = next;
+    queue->rear = (queue->rear+1) % QUEUE_SIZE;
     return 1;
 }
 
 int dequeue(SERVE_QUEUE *queue) {
 	if(isEmpty(queue)) return 0;
-    queue->request[queue->front] = queue->request[queue->front+1];
+//    queue->request[queue->front] = queue->request[queue->front+1];
     queue->front = (queue->front + 1) % QUEUE_SIZE;
     return 1;
 }
 
-int insertqueue(transitReq task, SERVE_QUEUE *queue, int pos){
-    int next = (queue->rear + 1) % QUEUE_SIZE;
-    if(next == queue->front) return 0;
-
-    int curr = queue->rear;
-    while (curr != pos) {
-    	int next = curr+1;
-    	int prev = curr-1;
-    	queue->request[next] = queue->request[curr];
-    	queue->request[curr] = queue->request[prev];
-    	curr = prev;
-    }
-
-    queue->request[pos] = task.target;
-	return 1;
-}
+//int insertqueue(transitReq task, SERVE_QUEUE *queue, int pos){
+//    int next = (queue->rear + 1) % QUEUE_SIZE;
+//    if(next == queue->front) return 0;
+//
+//    int curr = queue->rear;
+//    while (curr != pos) {
+//    	int next = curr+1;
+//    	int prev = curr-1;
+//    	queue->request[next] = queue->request[curr];
+//    	queue->request[curr] = queue->request[prev];
+//    	curr = prev;
+//    }
+//
+//    queue->request[pos] = task.target;
+//	return 1;
+//}
 
 void sortByProximity(uint8_t arr[], uint8_t pos) {
     uint8_t n = QUEUE_SIZE;
@@ -450,6 +453,7 @@ int main(void)
   xServe_QueueHandle = xQueueCreate(32, sizeof(transitReq));
   xQueueMutex = xSemaphoreCreateMutex();
   xQueueSem = xSemaphoreCreateBinary();
+  xUARTMutex = xSemaphoreCreateMutex();
   xTransitDoneSem = xSemaphoreCreateBinary();
 
 
@@ -719,14 +723,34 @@ void vParsing(void *argument)
   for(;;)
   {
 		UART_Frame frameBuf;
-		if (xQueueReceive(xUART_QueueHandle, &frameBuf, portMAX_DELAY) == pdTRUE)
+		if(xSemaphoreTake(xUARTMutex, portMAX_DELAY) == pdTRUE){
+			if (xQueueReceive(xUART_QueueHandle, &frameBuf, portMAX_DELAY) == pdTRUE)
 		    {
 		    	int id = frameBuf.data[0];
 			    memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
 
 		    }
+//	        uint8_t slaveID = frameBuf.data[0];
+//			int index = -1;
+//
+//			        switch(slaveID) {
+//			            case 0x01: index = 1; break;  // CAR_STA
+//			            case 0x02: index = 2; break;  // HALL_STA
+//			            case 0x03: index = 3; break;  // MQTT_STA
+//			            case 0x7F: index = 4; break;  // SERVO_DRIVER
+//			            default:
+//			                // Invalid slave ID - discard frame
+//			                continue;
+//			        }
+//
+//			        if(index >= 0 && index < 16) {
+//			            memcpy(read_RxFrame[index], frameBuf.data, frameBuf.size);
+//			        }
 
-	vTaskDelay(pdMS_TO_TICKS(10));
+			xSemaphoreGive(xUARTMutex);
+
+		}
+		vTaskDelay(pdMS_TO_TICKS(10));
   }
   /* USER CODE END 5 */
 }
@@ -932,10 +956,10 @@ void vUART_Read(void *argument)
 {
   /* USER CODE BEGIN vUART_Read */
   /* Infinite loop */
+	  uint8_t len;
 	  for(;;)
 	  {
 
-		uint8_t len;
 		switch (read_state){
 			case CAR:
   				len = read_Hreg(&CAR_STA, read_TxFrame[0]);
@@ -1037,15 +1061,19 @@ void vProcess(void *argument)
 void vStartTransit(void *argument)
 {
   /* USER CODE BEGIN vStartTransit */
-	xSemaphoreGive(xQueueSem);
-  /* USER CODE END vStartTransit */
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(xQueueSem, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    /* USER CODE END vStartTransit */
 }
 
 /* vReach function */
 void vReach(void *argument)
 {
   /* USER CODE BEGIN vReach */
-	xSemaphoreGive(xTransitDoneSem);
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(xTransitDoneSem, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
   /* USER CODE END vReach */
 }
 
