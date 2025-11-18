@@ -22,14 +22,14 @@ enum ModbusState {
     STATE_READ_CMD,
     STATE_WRITE_CMD
 };
-
+  
 typedef struct{
   uint16_t wstate1;
   uint16_t wstate2;
   uint16_t wstate3;
 }CMD;
-
 CMD parsing;
+
 QueueHandle_t xWriteQueue;
 ModbusState currentState = STATE_READ_SS; // Start the cycle immediately
 uint16_t lastSVal = 0; // For HoldregSet callback
@@ -188,7 +188,8 @@ void vModbusComTask(void *pvParameters){
   RTU_SLAVE.Hreg(3, aim_read);
 
   xQueueSend(xWriteQueue, &parsing, 0);
-  vTaskDelay(pdMS_TO_TICKS(10));
+  
+  vTaskDelay(10);
   }
 }
 
@@ -279,21 +280,29 @@ void setup() {
   RTU_SLAVE.onGetHreg(0x0003, cbRead); 
   RTU_SLAVE.onSetHreg(0x0003, cbWrite); 
 
-  xWriteQueue = xQueueCreate(8, sizeof(parsing));  
+  xWriteQueue = xQueueCreate(16, sizeof(parsing));  
   xTaskCreate(vUART_writeTask, "UART_Write", 2048, NULL, 3, NULL);
   xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
-  
 
 }
 
 
 void loop() {
   Serial.println(aim_read);
-
   Serial.println(RTU_SLAVE.Hreg(0));
   Serial.println(RTU_SLAVE.Hreg(1));
   Serial.println(RTU_SLAVE.Hreg(2));
   Serial.println(RTU_SLAVE.Hreg(3));
 
+  if (Serial1.available()) {
+      Serial.print("RAW RX: ");
+      while (Serial1.available()) {
+        Serial.print(Serial1.read(), HEX);
+        Serial.print(" ");
+      }
+      Serial.println();
+    }
+    
   vTaskDelay(pdMS_TO_TICKS(1000));
+
 }

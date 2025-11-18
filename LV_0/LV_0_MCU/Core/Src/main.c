@@ -228,6 +228,7 @@ SemaphoreHandle_t xQueueSem;
 SemaphoreHandle_t xQueueMutex;
 SemaphoreHandle_t xUARTMutex;
 SemaphoreHandle_t xTransitDoneSem;
+SemaphoreHandle_t xModbusMutex;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -253,10 +254,10 @@ void vReach(void *argument);
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-	if(RxData[1] != 0x03){
-			HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
-		return;
-	}
+//	if(RxData[1] != 0x03){
+//			HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+//		return;
+//	}
 	UART_Frame localBuf;
 	uint16_t crc_received = RxData[Size - 2] | (RxData[Size - 1] << 8);
 	uint16_t crc_calculated = crc16(RxData, Size - 2);
@@ -269,12 +270,18 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 	        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, FRAME_SIZE);
 	    return;
 	}
+//	if(RxData[1] = 0x03){
+//	localBuf.size = Size;
+//	    memcpy(localBuf.data, RxData, Size);
+//	    xQueueSendFromISR(xUART_QueueHandle, &localBuf, NULL);
+//	}
+
 	localBuf.size = Size;
-	    memcpy(localBuf.data, RxData, Size);
-	    xQueueSendFromISR(xUART_QueueHandle, &localBuf, NULL);
-	//memset(RxData, 0, sizeof(RxData));
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	memcpy(localBuf.data, RxData, Size);
+    xQueueSendFromISR(xUART_QueueHandle, &localBuf, &xHigherPriorityTaskWoken);
 
-
+	memset(RxData, 0, sizeof(RxData));
 	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
 
 }
@@ -455,7 +462,7 @@ int main(void)
   xQueueSem = xSemaphoreCreateBinary();
   xUARTMutex = xSemaphoreCreateMutex();
   xTransitDoneSem = xSemaphoreCreateBinary();
-
+  xModbusMutex = xSemaphoreCreateMutex();
 
   /* USER CODE END 1 */
 
@@ -723,34 +730,38 @@ void vParsing(void *argument)
   for(;;)
   {
 		UART_Frame frameBuf;
-		if(xSemaphoreTake(xUARTMutex, portMAX_DELAY) == pdTRUE){
 			if (xQueueReceive(xUART_QueueHandle, &frameBuf, portMAX_DELAY) == pdTRUE)
 		    {
-		    	int id = frameBuf.data[0];
-			    memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
+//		    	int id = frameBuf.data[0];
+//		    	if(frameBuf.data[1] == 0x03){
+//		    		memcpy(read_RxFrame[id], frameBuf.data, frameBuf.size);
+//		    	}
+
+		    	//if(frameBuf.data[1] == 0x10);
+
+
+	        uint8_t slaveID = frameBuf.data[0];
+			int index = -1;
+
+			        switch(slaveID) {
+			            case 0x01: index = 1; break;  // CAR_STA
+			            case 0x02: index = 2; break;  // HALL_STA
+			            case 0x03: index = 3; break;  // MQTT_STA
+			            case 0x7F: index = 4; break;  // SERVO_DRIVER
+			            default:
+			                // Invalid slave ID - discard frame
+			            	index = -1;
+			                continue;
+			        }
+
+			        if(index >= 0 && index < 16) {
+		                uint16_t copy_len = (frameBuf.size <= sizeof(read_RxFrame[0])) ? frameBuf.size : sizeof(read_RxFrame[0]);
+			            memcpy(read_RxFrame[index], frameBuf.data, copy_len);
+			        }
 
 		    }
-//	        uint8_t slaveID = frameBuf.data[0];
-//			int index = -1;
-//
-//			        switch(slaveID) {
-//			            case 0x01: index = 1; break;  // CAR_STA
-//			            case 0x02: index = 2; break;  // HALL_STA
-//			            case 0x03: index = 3; break;  // MQTT_STA
-//			            case 0x7F: index = 4; break;  // SERVO_DRIVER
-//			            default:
-//			                // Invalid slave ID - discard frame
-//			                continue;
-//			        }
-//
-//			        if(index >= 0 && index < 16) {
-//			            memcpy(read_RxFrame[index], frameBuf.data, frameBuf.size);
-//			        }
-
-			xSemaphoreGive(xUARTMutex);
-
-		}
 		vTaskDelay(pdMS_TO_TICKS(10));
+
   }
   /* USER CODE END 5 */
 }
@@ -911,7 +922,9 @@ void vUART_Write(void *argument)
 				writeBit(&CAR_TxFrame[0], 9, pos_b3);
 
 				len = write_MultipleHreg(&CAR_STA, CAR_TxFrame, write_TxFrame[0]);
-				HAL_UART_Transmit(&huart1, write_TxFrame[0], len, RESPONSE_TIMEOUT);
+				//HAL_UART_Transmit(&huart1, write_TxFrame[0], len, RESPONSE_TIMEOUT);
+				HAL_UART_Transmit_DMA(&huart1, write_TxFrame[0], len);
+
 				write_state = HALL;
 				break;
 
@@ -924,7 +937,9 @@ void vUART_Write(void *argument)
 				writeBit(&HALL_TxFrame[3], 5, pos_b3);
 
 				len = write_MultipleHreg(&HALL_STA, HALL_TxFrame, write_TxFrame[1]);
-				HAL_UART_Transmit(&huart1, write_TxFrame[1], len, RESPONSE_TIMEOUT);
+  				//HAL_UART_Transmit(&huart1, write_TxFrame[1], len, RESPONSE_TIMEOUT);
+  				HAL_UART_Transmit_DMA(&huart1, write_TxFrame[1], len);
+
 				write_state = MQTT;
 				break;
 			case MQTT:
@@ -963,7 +978,7 @@ void vUART_Read(void *argument)
 		switch (read_state){
 			case CAR:
   				len = read_Hreg(&CAR_STA, read_TxFrame[0]);
-				HAL_UART_Transmit(&huart1, read_TxFrame[0], len, RESPONSE_TIMEOUT);
+  				HAL_UART_Transmit(&huart1, read_TxFrame[0], len, RESPONSE_TIMEOUT);
 				read_state = HALL;
 				break;
 
@@ -972,16 +987,15 @@ void vUART_Read(void *argument)
 				HAL_UART_Transmit(&huart1, read_TxFrame[1], len, RESPONSE_TIMEOUT);
 				read_state = MQTT;
 				break;
-
 			case MQTT:
 				len = read_Hreg(&MQTT_STA, read_TxFrame[2]);
-				HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
+  				HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
 				read_state = DRIVER;
 				break;
 
 			case DRIVER:
 				len = read_Hreg(&SERVO_DRIVER, read_TxFrame[3]);
-				HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
+  				HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
 				read_state = CAR;
 				break;
 			}
@@ -1007,50 +1021,50 @@ void vProcess(void *argument)
   uint8_t car_aiming[16] = {0};
   for(;;)
   {
-      /* --- Hall UP --- */
-      uint16_t val_up = (read_RxFrame[2][5] << 8) | read_RxFrame[2][6];
-      extractBits(val_up, hall_calling_UP, cabin_1.max_fl);
-
-      /* --- Hall DOWN --- */
-      uint16_t val_dw = (read_RxFrame[2][7] << 8) | read_RxFrame[2][8];
-      extractBits(val_dw, hall_calling_DW, cabin_1.max_fl);
-
-      /* --- Car Aiming --- */
-      uint16_t val_car = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
-      extractBits(val_car, car_aiming, cabin_1.max_fl);
-
-	  if(hall_calling_UP[0] == 1){
-		 for(int i = 1; i<=8; i++){
-			 if(hall_calling_UP[i] == 1){
-				 request.target = i;
-				 request.dir = UP;
-				 request.requestBy = HALL_UI;
-				 xQueueSend(xServe_QueueHandle, &request, 0);
-			 }
-		 }
-	  }
-
-	  if(hall_calling_DW[0] == 1){
-		 for(int i = 1; i<=8; i++){
-			 if(hall_calling_DW[i] == 1){
-				 request.target = i;
-				 request.dir = DOWN;
-				 request.requestBy = HALL_UI;
-				 xQueueSend(xServe_QueueHandle, &request, 0);
-			 }
-		 }
-	  }
-
-	  if(car_aiming[0] == 1){
-		 for(int i = 1; i<=8; i++){
-			 if(car_aiming[i] == 1){
-				 request.target = i;
-				 request.dir = DIR(cabin_1.pos, i); //macro
-				 request.requestBy = CABIN;
-				 xQueueSend(xServe_QueueHandle, &request, 0);
-			 }
-		 }
-	  }
+//      /* --- Hall UP --- */
+//      uint16_t val_up = (read_RxFrame[2][5] << 8) | read_RxFrame[2][6];
+//      extractBits(val_up, hall_calling_UP, cabin_1.max_fl);
+//
+//      /* --- Hall DOWN --- */
+//      uint16_t val_dw = (read_RxFrame[2][7] << 8) | read_RxFrame[2][8];
+//      extractBits(val_dw, hall_calling_DW, cabin_1.max_fl);
+//
+//      /* --- Car Aiming --- */
+//      uint16_t val_car = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
+//      extractBits(val_car, car_aiming, cabin_1.max_fl);
+//
+//	  if(hall_calling_UP[0] == 1){
+//		 for(int i = 1; i<=8; i++){
+//			 if(hall_calling_UP[i] == 1){
+//				 request.target = i;
+//				 request.dir = UP;
+//				 request.requestBy = HALL_UI;
+//				 xQueueSend(xServe_QueueHandle, &request, 0);
+//			 }
+//		 }
+//	  }
+//
+//	  if(hall_calling_DW[0] == 1){
+//		 for(int i = 1; i<=8; i++){
+//			 if(hall_calling_DW[i] == 1){
+//				 request.target = i;
+//				 request.dir = DOWN;
+//				 request.requestBy = HALL_UI;
+//				 xQueueSend(xServe_QueueHandle, &request, 0);
+//			 }
+//		 }
+//	  }
+//
+//	  if(car_aiming[0] == 1){
+//		 for(int i = 1; i<=8; i++){
+//			 if(car_aiming[i] == 1){
+//				 request.target = i;
+//				 request.dir = DIR(cabin_1.pos, i); //macro
+//				 request.requestBy = CABIN;
+//				 xQueueSend(xServe_QueueHandle, &request, 0);
+//			 }
+//		 }
+//	  }
 
 	vTaskDelay(pdMS_TO_TICKS(10));
   }

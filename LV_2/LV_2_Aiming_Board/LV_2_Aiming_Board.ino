@@ -122,9 +122,9 @@ void vAimTask(void *pvParameters){
       //   writeBit(package, target, 1);
       //   //xTimerStart(xHoldStateTimer, 0);
       //   RTU_SLAVE.Hreg(1, package);
-      for(int i = 1; i<=8; i++){
-        writeBit(package, i, parsing_data[i]);
-      }
+      // for(int i = 1; i<=8; i++){
+      //   writeBit(package, i, parsing_data[i]);
+      // }
 
       int f1 = digitalRead(goto_f1);
       int f2 = digitalRead(goto_f2);
@@ -144,9 +144,11 @@ void vAimTask(void *pvParameters){
           writeBit(package, 0, 1);                                  
           writeBit(package, 3, 1);
         }
+
+
       xTimerStart(xClearStateTimer, 0);
       RTU_SLAVE.Hreg(1, package);
-      vTaskDelay(pdMS_TO_TICKS(10));
+      vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
   
@@ -171,14 +173,14 @@ void vDisplayTask(void *pvParameters){
   }
 }
 
-void vClearStateCallback(TimerHandle_t xTimer) {
+void vClearStateCallback(TimerHandle_t xClearStateTimer) {
           //active status bit
           writeBit(package, 0, 0);
           //aim to
           writeBit(package, 1, 0);
           writeBit(package, 2, 0);     
           writeBit(package, 3, 0); 
-
+      
           RTU_SLAVE.Hreg(1, package);
 }
 
@@ -223,7 +225,7 @@ void setup() {
   pinMode(out5, OUTPUT);
   pinMode(out6, OUTPUT);
 
-  xClearStateTimer = xTimerCreate("Clear_State", pdMS_TO_TICKS(1000), pdFALSE, 0, vClearStateCallback);    
+  xClearStateTimer = xTimerCreate("Clear_State", pdMS_TO_TICKS(20), pdFALSE, 0, vClearStateCallback);    
 
   xDisplayQueue = xQueueCreate(8, sizeof(parsing_data));  //handler for evnet queue
   xTaskCreate(vAimTask, "AimButtonHandle", 2048, NULL, 3, NULL);
@@ -232,15 +234,14 @@ void setup() {
 }
 
 void loop() {
-  //       int f1 = digitalRead(goto_f1);
-  //     int f2 = digitalRead(goto_f2);
-  //     int f3 = digitalRead(goto_f3);
-  // Serial.println(f1);
-  // Serial.println(f2);
-  // Serial.println(f3);
-  //       vTaskDelay(pdMS_TO_TICKS(1000));
-
-
+  int f1 = digitalRead(goto_f1);
+  int f2 = digitalRead(goto_f2);
+  int f3 = digitalRead(goto_f3);
+  Serial.println(f1);
+  Serial.println(f2);
+  Serial.println(f3);
+  Serial.println(package);
+  vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 
