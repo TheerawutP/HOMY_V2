@@ -22,16 +22,23 @@
 #define DOWN 4
 #define UP 5
 
-#define goto_f1 27
-#define goto_f2 14
-#define goto_f3 15
+#define goto_f1 27    //these 3 will be removed after testing 
+#define goto_f2 14    //
+#define goto_f3 15    //
 
 #define DW_LAMP(obj) digitalWrite(DOWN,obj)
 #define UP_LAMP(obj) digitalWrite(UP,obj)
 #define WAIT_IN_QUEUE(state, obj) digitalWrite(state ,obj)
 
+#define DEBOUNCE_MS 50
+volatile uint32_t lastAimISR_1 = 0;
+volatile uint32_t lastAimISR_2 = 0;
+volatile uint32_t lastAimISR_3 = 0;
+
 QueueHandle_t xDisplayQueue;
 TimerHandle_t xClearStateTimer;
+TaskHandle_t xAimTask;
+
 ModbusRTU RTU_SLAVE;
 uint16_t lastSVal;
 uint16_t parsing_data[16];
@@ -115,6 +122,7 @@ void vModbusComTask(void *pvParameters){
 }
 
 void vAimTask(void *pvParameters){
+  uint32_t val;
   for(;;){
       // int target = encode_aiming();
       // if(target != 0){
@@ -126,29 +134,28 @@ void vAimTask(void *pvParameters){
       //   writeBit(package, i, parsing_data[i]);
       // }
 
-      int f1 = digitalRead(goto_f1);
-      int f2 = digitalRead(goto_f2);
-      int f3 = digitalRead(goto_f3);
+      if(xTaskNotifyWait(0, 0xFFFFFFFF, &val, portMAX_DELAY) == pdTRUE){
+        switch (val){
+          case 1:
+            writeBit(package, 0, 1);                                  
+            writeBit(package, 1, 1); 
+            break;
+          
+          case 2:
+            writeBit(package, 0, 1);                                  
+            writeBit(package, 2, 1);
+            break;
 
-        if(f1 == 0){
-          writeBit(package, 0, 1);                                  
-          writeBit(package, 1, 1);                                  
+          case 3:
+            writeBit(package, 0, 1);                                  
+            writeBit(package, 3, 1);
+            break;
         }
-
-        if(f2 == 0){
-          writeBit(package, 0, 1);                                  
-          writeBit(package, 2, 1);
-        }
-
-        if(f3 == 0){
-          writeBit(package, 0, 1);                                  
-          writeBit(package, 3, 1);
-        }
-
+      }
 
       xTimerStart(xClearStateTimer, 0);
       RTU_SLAVE.Hreg(1, package);
-      vTaskDelay(pdMS_TO_TICKS(50));
+      vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
   
@@ -184,6 +191,36 @@ void vClearStateCallback(TimerHandle_t xClearStateTimer) {
           RTU_SLAVE.Hreg(1, package);
 }
 
+void ISR_gotoFl1(){
+  unsigned long now = millis();
+  if (now - lastAimISR_1 < DEBOUNCE_MS) return;  
+  lastAimISR_1 = now;
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  xTaskNotifyFromISR(xAimTask, 1, eSetValueWithOverwrite, &xHigherPriorityTaskWoken);
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void ISR_gotoFl2(){
+  unsigned long now = millis();
+  if (now - lastAimISR_2 < DEBOUNCE_MS) return;  
+  lastAimISR_2 = now;
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  xTaskNotifyFromISR(xAimTask, 2, eSetValueWithOverwrite, &xHigherPriorityTaskWoken);
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void ISR_gotoFl3(){
+  unsigned long now = millis();
+  if (now - lastAimISR_3 < DEBOUNCE_MS) return;  
+  lastAimISR_3 = now;
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  xTaskNotifyFromISR(xAimTask, 3, eSetValueWithOverwrite, &xHigherPriorityTaskWoken);
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+
+
+
 void setup() {
   Serial.begin(115200);
     //setup as master
@@ -209,6 +246,9 @@ void setup() {
   pinMode(goto_f1, INPUT_PULLUP);
   pinMode(goto_f2, INPUT_PULLUP);
   pinMode(goto_f3, INPUT_PULLUP);
+  attachInterrupt(goto_f1, ISR_gotoFl1, FALLING);
+  attachInterrupt(goto_f2, ISR_gotoFl2, FALLING);
+  attachInterrupt(goto_f3, ISR_gotoFl3, FALLING);
 
   pinMode(segB0, OUTPUT);   
   pinMode(segB1, OUTPUT);   
@@ -225,10 +265,10 @@ void setup() {
   pinMode(out5, OUTPUT);
   pinMode(out6, OUTPUT);
 
-  xClearStateTimer = xTimerCreate("Clear_State", pdMS_TO_TICKS(20), pdFALSE, 0, vClearStateCallback);    
+  xClearStateTimer = xTimerCreate("Clear_State", pdMS_TO_TICKS(1000), pdFALSE, 0, vClearStateCallback);    
 
   xDisplayQueue = xQueueCreate(8, sizeof(parsing_data));  //handler for evnet queue
-  xTaskCreate(vAimTask, "AimButtonHandle", 2048, NULL, 3, NULL);
+  xTaskCreate(vAimTask, "AimButtonHandle", 2048, NULL, 3, &xAimTask);
   xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
   xTaskCreate(vDisplayTask, "Display", 2048, NULL, 3, NULL);
 }
