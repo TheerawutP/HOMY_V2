@@ -199,7 +199,7 @@ const osThreadAttr_t UART_ReadTask_attributes = {
 osThreadId_t ProcessTaskHandle;
 const osThreadAttr_t ProcessTask_attributes = {
   .name = "ProcessTask",
-  .stack_size = 256 * 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for xStartTransitTimer */
@@ -304,6 +304,7 @@ void extractBits(uint16_t val, uint8_t *arr, uint8_t size) {
         arr[i] = (val & (1 << i)) ? 1 : 0;
     }
 }
+
 
 
 uint8_t read_Hreg(NewSlave *a, uint8_t *frame)
@@ -1016,55 +1017,56 @@ void vProcess(void *argument)
   /* USER CODE BEGIN vProcess */
   /* Infinite loop */
   transitReq request;
-  uint8_t hall_calling_UP[16] = {0};
-  uint8_t hall_calling_DW[16] = {0};
-  uint8_t car_aiming[16] = {0};
+  uint16_t hall_calling_UP[16] = {0};
+  uint16_t hall_calling_DW[16] = {0};
+  uint16_t car_aiming[16] = {0};
   for(;;)
   {
-//      /* --- Hall UP --- */
-//      uint16_t val_up = (read_RxFrame[2][5] << 8) | read_RxFrame[2][6];
-//      extractBits(val_up, hall_calling_UP, cabin_1.max_fl);
-//
-//      /* --- Hall DOWN --- */
-//      uint16_t val_dw = (read_RxFrame[2][7] << 8) | read_RxFrame[2][8];
-//      extractBits(val_dw, hall_calling_DW, cabin_1.max_fl);
-//
-//      /* --- Car Aiming --- */
-//      uint16_t val_car = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
-//      extractBits(val_car, car_aiming, cabin_1.max_fl);
-//
-//	  if(hall_calling_UP[0] == 1){
-//		 for(int i = 1; i<=8; i++){
-//			 if(hall_calling_UP[i] == 1){
-//				 request.target = i;
-//				 request.dir = UP;
-//				 request.requestBy = HALL_UI;
-//				 xQueueSend(xServe_QueueHandle, &request, 0);
-//			 }
-//		 }
-//	  }
-//
-//	  if(hall_calling_DW[0] == 1){
-//		 for(int i = 1; i<=8; i++){
-//			 if(hall_calling_DW[i] == 1){
-//				 request.target = i;
-//				 request.dir = DOWN;
-//				 request.requestBy = HALL_UI;
-//				 xQueueSend(xServe_QueueHandle, &request, 0);
-//			 }
-//		 }
-//	  }
-//
-//	  if(car_aiming[0] == 1){
-//		 for(int i = 1; i<=8; i++){
-//			 if(car_aiming[i] == 1){
-//				 request.target = i;
-//				 request.dir = DIR(cabin_1.pos, i); //macro
-//				 request.requestBy = CABIN;
-//				 xQueueSend(xServe_QueueHandle, &request, 0);
-//			 }
-//		 }
-//	  }
+      /* --- Hall UP --- */
+	  uint16_t val_up = (read_RxFrame[2][5] << 8) | read_RxFrame[2][6];
+      extractBits(val_up, hall_calling_UP, cabin_1.max_fl);
+
+      /* --- Hall DOWN --- */
+      uint16_t val_dw = (read_RxFrame[2][7] << 8) | read_RxFrame[2][8];
+      extractBits(val_dw, hall_calling_DW, cabin_1.max_fl);
+
+      /* --- Car Aiming --- */
+      uint16_t val_car = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
+      extractBits(val_car, car_aiming, cabin_1.max_fl);
+
+
+	  if(hall_calling_UP[0] == 1){
+		 for(int i = 1; i<=8; i++){
+			 if(hall_calling_UP[i] == 1){
+				 request.target = i;
+				 request.dir = UP;
+				 request.requestBy = HALL_UI;
+				 xQueueSend(xServe_QueueHandle, &request, 0);
+			 }
+		 }
+	  }
+
+	  if(hall_calling_DW[0] == 1){
+		 for(int i = 1; i<=8; i++){
+			 if(hall_calling_DW[i] == 1){
+				 request.target = i;
+				 request.dir = DOWN;
+				 request.requestBy = HALL_UI;
+				 xQueueSend(xServe_QueueHandle, &request, 0);
+			 }
+		 }
+	  }
+
+	  if(car_aiming[0] == 1){
+		 for(int i = 1; i<=8; i++){
+			 if(car_aiming[i] == 1){
+				 request.target = i;
+				 request.dir = DIR(cabin_1.pos, i); //macro
+				 request.requestBy = CABIN;
+				 xQueueSend(xServe_QueueHandle, &request, 0);
+			 }
+		 }
+	  }
 
 	vTaskDelay(pdMS_TO_TICKS(10));
   }
