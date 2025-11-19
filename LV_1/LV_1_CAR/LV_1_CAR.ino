@@ -8,6 +8,15 @@
 #define AIM_BOARD 2       // Slave ID for the AIM peripheral on Bus B
 #define CMD_BOARD 3
 
+#define floor_ss_1 27
+#define floor_ss_2 14
+#define floor_ss_3 12
+// #define floor_ss_4 23
+// #define floor_ss_5 22
+// #define floor_ss_6 19
+
+
+#define DEBOUNCE_MS 50
 // --- MODBUS OBJECTS ---
 ModbusMaster node;     // Master object for Bus B (CAR -> AIM/DOOR)
 ModbusRTU RTU_SLAVE;   // Slave object for Bus A (STM32 -> CAR)
@@ -31,16 +40,22 @@ typedef struct{
 CMD parsing;
 
 QueueHandle_t xWriteQueue;
-ModbusState currentState = STATE_READ_SS; // Start the cycle immediately
-uint16_t lastSVal = 0; // For HoldregSet callback
-uint16_t IN_QUEUE = 0; // Command word for Aiming_board
+TaskHandle_t xUpdatePos;
 
+ModbusState currentState = STATE_READ_SS; // Start the cycle immediately
+
+uint16_t lastSVal = 0; // For HoldregSet callback
+
+uint16_t IN_QUEUE = 0; // Command word for Aiming_board
 uint16_t ss_read = 0; // Status read from SENSOR_BOARD
 uint16_t aim_read = 0; // Status read from AIM_BOARD
 uint16_t cmd_read =0;
-
 uint16_t package = 0; 
 uint16_t aiming_frame = 0; 
+
+volatile uint32_t lastFloorISR_1 = 0;
+volatile uint32_t lastFloorISR_2 = 0;
+volatile uint32_t lastFloorISR_3 = 0;
 
 uint16_t bit_s[16] = {0};
 uint16_t bit_r1[16] = {0};
@@ -185,10 +200,10 @@ void vModbusComTask(void *pvParameters){
     writeBit(parsing.wstate2, i, bit_IN_QUEUE[i-6]);
   }
   
+  RTU_SLAVE.Hreg(2, package);
   RTU_SLAVE.Hreg(3, aim_read);
 
   xQueueSend(xWriteQueue, &parsing, 0);
-  
   vTaskDelay(10);
   }
 }
@@ -253,6 +268,45 @@ void vUART_writeTask(void *pvParameters){
   }
 }
 
+void vUpdatePos(void *arg){
+  uint32_t val;
+  for(;;){
+    if(xTaskNotifyWait(0, 0xFFFFFFFF, &val, portMAX_DELAY) == pdTRUE){
+      //reg2 b5-8 for pos sent stm32
+      writeBit(package, 5, val);
+      writeBit(package, 6, val>>1);
+      writeBit(package, 7, val>>2);
+      writeBit(package, 8, val>>3);
+    }
+  }
+}
+
+void ARDUINO_ISR_ATTR ISR_atFloor1() {
+  unsigned long now = millis();
+  if (now - lastFloorISR_1 < DEBOUNCE_MS) return;  // debounce 50ms
+  lastFloorISR_1 = now;
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  xTaskNotifyFromISR(xUpdatePos, 1, eSetValueWithOverwrite, &xHigherPriorityTaskWoken);
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void ARDUINO_ISR_ATTR ISR_atFloor2() {
+  unsigned long now = millis();
+  if (now - lastFloorISR_2 < DEBOUNCE_MS) return;  // debounce 50ms
+  lastFloorISR_2 = now;
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  xTaskNotifyFromISR(xUpdatePos, 2, eSetValueWithOverwrite, &xHigherPriorityTaskWoken);
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void ARDUINO_ISR_ATTR ISR_atFloor3() {
+  unsigned long now = millis();
+  if (now - lastFloorISR_3 < DEBOUNCE_MS) return;  // debounce 50ms
+  lastFloorISR_3 = now;
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  xTaskNotifyFromISR(xUpdatePos, 3, eSetValueWithOverwrite, &xHigherPriorityTaskWoken);
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
 
 void setup() {
   Serial.begin(115200);
@@ -280,9 +334,18 @@ void setup() {
   RTU_SLAVE.onGetHreg(0x0003, cbRead); 
   RTU_SLAVE.onSetHreg(0x0003, cbWrite); 
 
+  pinMode(floor_ss_1, INPUT_PULLUP);
+  pinMode(floor_ss_2, INPUT_PULLUP);
+  pinMode(floor_ss_3, INPUT_PULLUP);
+  attachInterrupt(floor_ss_1, ISR_atFloor1, FALLING);
+  attachInterrupt(floor_ss_2, ISR_atFloor2, FALLING);
+  attachInterrupt(floor_ss_3, ISR_atFloor3, FALLING);
+
+
   xWriteQueue = xQueueCreate(16, sizeof(parsing));  
   xTaskCreate(vUART_writeTask, "UART_Write", 2048, NULL, 3, NULL);
   xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
+  xTaskCreate(vUpdatePos, "UpdatePos", 512, NULL, 3, &xUpdatePos);
 
 }
 
@@ -293,16 +356,16 @@ void loop() {
   Serial.println(RTU_SLAVE.Hreg(1));
   Serial.println(RTU_SLAVE.Hreg(2));
   Serial.println(RTU_SLAVE.Hreg(3));
+  Serial.println("----------------------");
 
-  if (Serial1.available()) {
-      Serial.print("RAW RX: ");
-      while (Serial1.available()) {
-        Serial.print(Serial1.read(), HEX);
-        Serial.print(" ");
-      }
-      Serial.println();
-    }
+  // if (Serial1.available()) {
+  //     Serial.print("RAW RX: ");
+  //     while (Serial1.available()) {
+  //       Serial.print(Serial1.read(), HEX);
+  //       Serial.print(" ");
+  //     }
+  //     Serial.println();
+  //   }
     
   vTaskDelay(pdMS_TO_TICKS(1000));
-
 }
