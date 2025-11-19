@@ -204,10 +204,6 @@ void vModbusComTask(void *pvParameters) {
     RTU_SLAVE.Hreg(2, package);
     RTU_SLAVE.Hreg(3, aim_read);
 
-    if(xSemaphoreTake(xSemResetFrame, portMAX_DELAY) == pdTRUE){
-      xTimerStart(xResetFrameTimer, 0);
-    }
-
     xQueueSend(xWriteQueue, &parsing, 0);
     vTaskDelay(10);
   }
@@ -280,16 +276,14 @@ void vUpdatePos(void *arg) {
       writeBit(package, 6, (val >> 1) & 0x01);
       writeBit(package, 7, (val >> 2) & 0x01);
       writeBit(package, 8, (val >> 3) & 0x01);
+      xTimerStart(xResetFrameTimer, 0);
+      }
     }
   }
-}
+
 
 void vResetFrameCallback(TimerHandle_t xTimer){
   package = 0;
-  aim_read = 0;
-  cmd_read = 0;
-  ss_read = 0;
-  xSemaphoreGive(xSemResetFrame);
 }
 
 void ARDUINO_ISR_ATTR ISR_atFloor1() {
@@ -352,13 +346,13 @@ void setup() {
   attachInterrupt(floor_ss_2, ISR_atFloor2, FALLING);
   attachInterrupt(floor_ss_3, ISR_atFloor3, FALLING);
 
-  xSemResetFrame = xSemaphoreCreateBinary();
-  xSemaphoreGive(xSemResetFrame);
+  //xSemResetFrame = xSemaphoreCreateBinary();
+  //xSemaphoreGive(xSemResetFrame);
   xResetFrameTimer = xTimerCreate("ResetFrameTime", pdMS_TO_TICKS(500), pdFALSE, 0, vResetFrameCallback);
   xWriteQueue = xQueueCreate(16, sizeof(parsing));
   xTaskCreate(vUART_writeTask, "UART_Write", 2048, NULL, 3, NULL);
   xTaskCreate(vModbusComTask, "ModbusCom", 2048, NULL, 3, NULL);
-  xTaskCreate(vUpdatePos, "UpdatePos", 512, NULL, 3, &xUpdatePos);
+  xTaskCreate(vUpdatePos, "UpdatePos", 1024, NULL, 3, &xUpdatePos);
 }
 
 
