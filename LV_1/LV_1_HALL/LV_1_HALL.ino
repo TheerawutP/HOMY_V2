@@ -92,33 +92,33 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
 void handleMasterReadResult(uint8_t slaveId, uint8_t result, uint16_t& readVar) {
     if (result == node.ku8MBSuccess) {
         readVar = node.getResponseBuffer(0); // Store the first register read
-        Serial.print("SUCCESS: Read ");
-        Serial.print(readVar);
-        Serial.print(" from slave: ");
-        Serial.println(slaveId);
+        // Serial.print("SUCCESS: Read ");
+        // Serial.print(readVar);
+        // Serial.print(" from slave: ");
+        // Serial.println(slaveId);
     } else {
-        Serial.print("ERROR: Read failed (Slave ");
-        Serial.print(slaveId);
-        Serial.print(", Code ");
-        Serial.print(result); // Check this code for timeouts (226) or invalid data (227)
-        Serial.print(")");
-        Serial.println();
+        // Serial.print("ERROR: Read failed (Slave ");
+        // Serial.print(slaveId);
+        // Serial.print(", Code ");
+        // Serial.print(result); // Check this code for timeouts (226) or invalid data (227)
+        // Serial.print(")");
+        // Serial.println();
     }
 }
 
 void handleMasterWriteResult(uint8_t slaveId, uint8_t result, uint16_t writeVal) {
     if (result == node.ku8MBSuccess) {
-        Serial.print("SUCCESS: Wrote ");
-        Serial.print(writeVal);
-        Serial.print(" to slave: ");
-        Serial.println(slaveId);
+        // Serial.print("SUCCESS: Wrote ");
+        // Serial.print(writeVal);
+        // Serial.print(" to slave: ");
+        // Serial.println(slaveId);
     } else {
-        Serial.print("ERROR: Write failed (Slave ");
-        Serial.print(slaveId);
-        Serial.print(", Code ");
-        Serial.print(result);
-        Serial.print(")");
-        Serial.println();
+        // Serial.print("ERROR: Write failed (Slave ");
+        // Serial.print(slaveId);
+        // Serial.print(", Code ");
+        // Serial.print(result);
+        // Serial.print(")");
+        // Serial.println();
     }
 }
 
