@@ -12,19 +12,19 @@
 #define segB2 25
 #define segB3 26
 
-#define out1 12  //button
+#define out1 15  //button
 #define out2 13
 #define out3 23
 #define out4 22
-#define out5 19
+#define out5 19  
 #define out6 18
 
 #define DOWN 4
 #define UP 5
 
 #define goto_f1 27    //these 3 will be removed after testing 
-#define goto_f2 14    //
-#define goto_f3 15    //
+#define goto_f2 14   //
+#define goto_f3 12    //
 
 #define DW_LAMP(obj) digitalWrite(DOWN,obj)
 #define UP_LAMP(obj) digitalWrite(UP,obj)
@@ -34,7 +34,7 @@
 volatile uint32_t lastAimISR_1 = 0;
 volatile uint32_t lastAimISR_2 = 0;
 volatile uint32_t lastAimISR_3 = 0;
-
+  
 QueueHandle_t xDisplayQueue;
 TimerHandle_t xClearStateTimer;
 TaskHandle_t xAimTask;
@@ -139,16 +139,19 @@ void vAimTask(void *pvParameters){
           case 1:
             writeBit(package, 0, 1);                                  
             writeBit(package, 1, 1); 
+            Serial.println("aim 1");
             break;
           
           case 2:
             writeBit(package, 0, 1);                                  
             writeBit(package, 2, 1);
+            Serial.println("aim 2");
             break;
 
           case 3:
             writeBit(package, 0, 1);                                  
             writeBit(package, 3, 1);
+            Serial.println("aim 3");
             break;
         }
       }
@@ -274,14 +277,16 @@ void setup() {
 }
 
 void loop() {
-  int f1 = digitalRead(goto_f1);
-  int f2 = digitalRead(goto_f2);
-  int f3 = digitalRead(goto_f3);
-  Serial.println(f1);
-  Serial.println(f2);
-  Serial.println(f3);
-  Serial.println(package);
-  vTaskDelay(pdMS_TO_TICKS(1000));
+//   int f1 = digitalRead(goto_f1);
+//   int f2 = digitalRead(goto_f2);
+//   int f3 = digitalRead(goto_f3);
+//   Serial.println(f1);
+//   Serial.println(f2);
+//   Serial.println(f3);
+//   Serial.print("Package: ");
+//   Serial.println(package);
+//   Serial.println("-------------");
+//   vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 
