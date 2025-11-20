@@ -128,7 +128,6 @@ SERVE_QUEUE queue_UP;
 SERVE_QUEUE queue_DW;
 
 uint8_t curr_transit_to;
-
 ELEVATOR_CAR cabin_1 = {
 		.max_fl = 8,
 		.min_fl = 1,
@@ -214,11 +213,11 @@ const osTimerAttr_t xReachTimer_attributes = {
 };
 /* USER CODE BEGIN PV */
 uint8_t RxData[32] = {0};
-uint8_t read_TxFrame[16][32] = {0};
-uint8_t write_TxFrame[16][32] = {0};
-uint8_t read_RxFrame[16][32] = {0};
-uint16_t CAR_TxFrame[16] = {0};
-uint16_t HALL_TxFrame[16] = {0};
+uint8_t read_TxFrame[32][32] = {0};
+uint8_t write_TxFrame[32][32] = {0};
+uint8_t read_RxFrame[32][32] = {0};
+uint16_t CAR_TxFrame[32] = {0};
+uint16_t HALL_TxFrame[32] = {0};
 current_slave read_state = CAR;
 current_slave write_state = CAR;
 
@@ -299,9 +298,9 @@ void parseEndian(uint16_t val, uint8_t *hi, uint8_t *lo){
      *lo = val & 0xFF;
 }
 
-void extractBits(uint16_t val, uint8_t *arr, uint8_t size) {
+void extractBits(int val, uint16_t *arr, uint8_t size) {
     for (uint8_t i = 0; i < size; i++) {
-        arr[i] = (val & (1 << i)) ? 1 : 0;
+        arr[i] = (val >> i) & 0x0001;
     }
 }
 
@@ -1018,8 +1017,8 @@ void vProcess(void *argument)
   /* Infinite loop */
   transitReq request;
   uint16_t hall_calling_UP[16] = {0};
-  uint16_t hall_calling_DW[16] = {0};
-  uint16_t car_aiming[16] = {0};
+  int hall_calling_DW[16] = {0};
+  int car_aiming[16] = {0};
   for(;;)
   {
       /* --- Hall UP --- */
@@ -1031,8 +1030,8 @@ void vProcess(void *argument)
       extractBits(val_dw, hall_calling_DW, cabin_1.max_fl);
 
       /* --- Car Aiming --- */
-      uint16_t val_car = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
-      extractBits(val_car, car_aiming, cabin_1.max_fl);
+      int val_car = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
+      extractBits(val_car, (uint8_t)car_aiming, cabin_1.max_fl);
 
 
 	  if(hall_calling_UP[0] == 1){
