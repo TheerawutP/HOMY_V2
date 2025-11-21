@@ -176,14 +176,14 @@ const osThreadAttr_t ParsingTask_attributes = {
 osThreadId_t ServeQueueTaskHandle;
 const osThreadAttr_t ServeQueueTask_attributes = {
   .name = "ServeQueueTask",
-  .stack_size = 256 * 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for TransitTask */
 osThreadId_t TransitTaskHandle;
 const osThreadAttr_t TransitTask_attributes = {
   .name = "TransitTask",
-  .stack_size = 128 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for UART_WriteTask */
@@ -224,8 +224,13 @@ uint8_t write_TxFrame[32][32] = {0};
 uint8_t read_RxFrame[32][32] = {0};
 uint16_t CAR_TxFrame[32] = {0};
 uint16_t HALL_TxFrame[32] = {0};
+
 current_slave read_state = CAR;
 current_slave write_state = CAR;
+
+int car_aiming[16] = {0};
+int val_car;
+
 
 QueueHandle_t xUART_QueueHandle;
 QueueHandle_t xServe_QueueHandle;
@@ -304,9 +309,9 @@ void parseEndian(uint16_t val, uint8_t *hi, uint8_t *lo){
      *lo = val & 0xFF;
 }
 
-void extractBits(int val, uint16_t *arr, uint8_t size) {
-    for (uint8_t i = 0; i < size; i++) {
-        arr[i] = (val >> i) & 0x0001;
+void extractBits(int val, int *arr[16], uint8_t size) {
+    for(int i = 0; i < size; i++) {
+        arr[i] = (val >> i) & 1;
     }
 }
 
@@ -441,6 +446,7 @@ int elevatorQueueManage(ELEVATOR_CAR *car, transitReq task, SERVE_QUEUE *up, SER
 		car->dir = task.dir;
 	}
 
+
 	if(task.dir == UP){
 		enqueue(task, up);
 		sortByProximity(up->request, car->pos);
@@ -510,10 +516,10 @@ int main(void)
 
   /* Create the timer(s) */
   /* creation of xStartTransitTimer */
-  xStartTransitTimerHandle = osTimerNew(vStartTransit, osTimerPeriodic, NULL, &xStartTransitTimer_attributes);
+  xStartTransitTimerHandle = osTimerNew(vStartTransit, osTimerOnce, NULL, &xStartTransitTimer_attributes);
 
   /* creation of xReachTimer */
-  xReachTimerHandle = osTimerNew(vReach, osTimerPeriodic, NULL, &xReachTimer_attributes);
+  xReachTimerHandle = osTimerNew(vReach, osTimerOnce, NULL, &xReachTimer_attributes);
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
@@ -791,7 +797,7 @@ void vServeQueue(void *argument)
 		                if(cabin_1.dir == IDLE){
 		                	osTimerStart(xStartTransitTimerHandle, 6000);
 		                }
-		                else osTimerStart(xStartTransitTimerHandle, 0);
+		                else osTimerStart(xStartTransitTimerHandle, 500);
 					}
 		            xSemaphoreGive(xQueueMutex);
 				}
@@ -928,7 +934,6 @@ void vUART_Write(void *argument)
 
 				len = write_MultipleHreg(&CAR_STA, CAR_TxFrame, write_TxFrame[0]);
 				HAL_UART_Transmit(&huart1, write_TxFrame[0], len, RESPONSE_TIMEOUT);
-//				HAL_UART_Transmit_DMA(&huart1, write_TxFrame[0], len);
 
 				write_state = HALL;
 				break;
@@ -943,7 +948,6 @@ void vUART_Write(void *argument)
 
 				len = write_MultipleHreg(&HALL_STA, HALL_TxFrame, write_TxFrame[1]);
   				HAL_UART_Transmit(&huart1, write_TxFrame[1], len, RESPONSE_TIMEOUT);
-//  				HAL_UART_Transmit_DMA(&huart1, write_TxFrame[1], len);
 
 				write_state = MQTT;
 				break;
@@ -996,13 +1000,13 @@ void vUART_Read(void *argument)
 				break;
 			case MQTT:
 				len = read_Hreg(&MQTT_STA, read_TxFrame[2]);
-  				//HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
+  				HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
 				read_state = DRIVER;
 				break;
 
 			case DRIVER:
 				len = read_Hreg(&SERVO_DRIVER, read_TxFrame[3]);
-  				//HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
+  				HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
 				read_state = CAR;
 				mbState = WRITE;
 				break;
@@ -1027,7 +1031,7 @@ void vProcess(void *argument)
   transitReq request;
   uint16_t hall_calling_UP[16] = {0};
   int hall_calling_DW[16] = {0};
-  int car_aiming[16] = {0};
+  //int car_aiming[16] = {0};
   for(;;)
   {
       /* --- Hall UP --- */
@@ -1039,32 +1043,32 @@ void vProcess(void *argument)
       extractBits(val_dw, hall_calling_DW, cabin_1.max_fl);
 
       /* --- Car Aiming --- */
-      int val_car = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
-      extractBits(val_car, (uint8_t)car_aiming, cabin_1.max_fl);
+      val_car = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
+      extractBits(val_car, car_aiming, cabin_1.max_fl);
 
 
-	  if(hall_calling_UP[0] == 1){
-		 for(int i = 1; i<=8; i++){
-			 if(hall_calling_UP[i] == 1){
-				 request.target = i;
-				 request.dir = UP;
-				 request.requestBy = HALL_UI;
-				 xQueueSend(xServe_QueueHandle, &request, 0);
-			 }
-		 }
-	  }
-
-	  if(hall_calling_DW[0] == 1){
-		 for(int i = 1; i<=8; i++){
-			 if(hall_calling_DW[i] == 1){
-				 request.target = i;
-				 request.dir = DOWN;
-				 request.requestBy = HALL_UI;
-				 xQueueSend(xServe_QueueHandle, &request, 0);
-			 }
-		 }
-	  }
-
+//	  if(hall_calling_UP[0] == 1){
+//		 for(int i = 1; i<=8; i++){
+//			 if(hall_calling_UP[i] == 1){
+//				 request.target = i;
+//				 request.dir = UP;
+//				 request.requestBy = HALL_UI;
+//				 xQueueSend(xServe_QueueHandle, &request, 0);
+//			 }
+//		 }
+//	  }
+//
+//	  if(hall_calling_DW[0] == 1){
+//		 for(int i = 1; i<=8; i++){
+//			 if(hall_calling_DW[i] == 1){
+//				 request.target = i;
+//				 request.dir = DOWN;
+//				 request.requestBy = HALL_UI;
+//				 xQueueSend(xServe_QueueHandle, &request, 0);
+//			 }
+//		 }
+//	  }
+//
 	  if(car_aiming[0] == 1){
 		 for(int i = 1; i<=8; i++){
 			 if(car_aiming[i] == 1){
