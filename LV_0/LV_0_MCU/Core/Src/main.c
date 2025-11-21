@@ -62,6 +62,12 @@ typedef enum{
 	DOWN
 }direction;
 
+typedef enum{
+	READ,
+	WRITE,
+	WAIT
+}transaction_t;
+
 //typedef struct{
 //	direction dir;
 //	uint16_t toque;
@@ -126,7 +132,7 @@ NewSlave SERVO_DRIVER = {
 
 SERVE_QUEUE queue_UP;
 SERVE_QUEUE queue_DW;
-
+transaction_t mbState = READ;
 uint8_t curr_transit_to;
 ELEVATOR_CAR cabin_1 = {
 		.max_fl = 8,
@@ -163,7 +169,7 @@ UART_HandleTypeDef huart2;
 osThreadId_t ParsingTaskHandle;
 const osThreadAttr_t ParsingTask_attributes = {
   .name = "ParsingTask",
-  .stack_size = 256 * 4,
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for ServeQueueTask */
@@ -177,7 +183,7 @@ const osThreadAttr_t ServeQueueTask_attributes = {
 osThreadId_t TransitTaskHandle;
 const osThreadAttr_t TransitTask_attributes = {
   .name = "TransitTask",
-  .stack_size = 256 * 4,
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for UART_WriteTask */
@@ -198,7 +204,7 @@ const osThreadAttr_t UART_ReadTask_attributes = {
 osThreadId_t ProcessTaskHandle;
 const osThreadAttr_t ProcessTask_attributes = {
   .name = "ProcessTask",
-  .stack_size = 512 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for xStartTransitTimer */
@@ -253,10 +259,10 @@ void vReach(void *argument);
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-//	if(RxData[1] != 0x03){
-//			HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
-//		return;
-//	}
+	if(RxData[1] != 0x03){
+			HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+		return;
+	}
 	UART_Frame localBuf;
 	uint16_t crc_received = RxData[Size - 2] | (RxData[Size - 1] << 8);
 	uint16_t crc_calculated = crc16(RxData, Size - 2);
@@ -504,10 +510,10 @@ int main(void)
 
   /* Create the timer(s) */
   /* creation of xStartTransitTimer */
-  xStartTransitTimerHandle = osTimerNew(vStartTransit, osTimerOnce, NULL, &xStartTransitTimer_attributes);
+  xStartTransitTimerHandle = osTimerNew(vStartTransit, osTimerPeriodic, NULL, &xStartTransitTimer_attributes);
 
   /* creation of xReachTimer */
-  xReachTimerHandle = osTimerNew(vReach, osTimerOnce, NULL, &xReachTimer_attributes);
+  xReachTimerHandle = osTimerNew(vReach, osTimerPeriodic, NULL, &xReachTimer_attributes);
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
@@ -577,14 +583,13 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 16;
-  RCC_OscInitStruct.PLL.PLLN = 336;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 4;
+  RCC_OscInitStruct.PLL.PLLN = 50;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 2;
   RCC_OscInitStruct.PLL.PLLR = 2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
@@ -601,7 +606,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -739,7 +744,6 @@ void vParsing(void *argument)
 
 		    	//if(frameBuf.data[1] == 0x10);
 
-
 	        uint8_t slaveID = frameBuf.data[0];
 			int index = -1;
 
@@ -780,7 +784,7 @@ void vServeQueue(void *argument)
   transitReq request;
   for(;;)
   {
-		if (xQueueReceive(xServe_QueueHandle, &request, portMAX_DELAY) == pdTRUE)
+		if(xQueueReceive(xServe_QueueHandle, &request, portMAX_DELAY) == pdTRUE)
 		    {
 				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
 					if(elevatorQueueManage(&cabin_1, request, &queue_UP, &queue_DW)){
@@ -910,6 +914,7 @@ void vUART_Write(void *argument)
 	  	uint8_t pos_b2 = (cabin_1.pos>>2) & 1;
 	  	uint8_t pos_b3 = (cabin_1.pos>>3) & 1;
 
+	  	if(mbState == WRITE){
 		switch (write_state){
 			case CAR:
 				//packing for car
@@ -922,8 +927,8 @@ void vUART_Write(void *argument)
 				writeBit(&CAR_TxFrame[0], 9, pos_b3);
 
 				len = write_MultipleHreg(&CAR_STA, CAR_TxFrame, write_TxFrame[0]);
-				//HAL_UART_Transmit(&huart1, write_TxFrame[0], len, RESPONSE_TIMEOUT);
-				HAL_UART_Transmit_DMA(&huart1, write_TxFrame[0], len);
+				HAL_UART_Transmit(&huart1, write_TxFrame[0], len, RESPONSE_TIMEOUT);
+//				HAL_UART_Transmit_DMA(&huart1, write_TxFrame[0], len);
 
 				write_state = HALL;
 				break;
@@ -937,8 +942,8 @@ void vUART_Write(void *argument)
 				writeBit(&HALL_TxFrame[3], 5, pos_b3);
 
 				len = write_MultipleHreg(&HALL_STA, HALL_TxFrame, write_TxFrame[1]);
-  				//HAL_UART_Transmit(&huart1, write_TxFrame[1], len, RESPONSE_TIMEOUT);
-  				HAL_UART_Transmit_DMA(&huart1, write_TxFrame[1], len);
+  				HAL_UART_Transmit(&huart1, write_TxFrame[1], len, RESPONSE_TIMEOUT);
+//  				HAL_UART_Transmit_DMA(&huart1, write_TxFrame[1], len);
 
 				write_state = MQTT;
 				break;
@@ -952,10 +957,12 @@ void vUART_Write(void *argument)
 //				len = read_Hreg(&SERVO_DRIVER, read_TxFrame[3]);
 //				HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
 				write_state = CAR;
+				mbState = READ;
 				break;
 
-		}
-	  	vTaskDelay(pdMS_TO_TICKS(10));
+			}
+	  	}
+	  	vTaskDelay(pdMS_TO_TICKS(20));
   }
   /* USER CODE END vUART_Write */
 }
@@ -974,7 +981,7 @@ void vUART_Read(void *argument)
 	  uint8_t len;
 	  for(;;)
 	  {
-
+		if(mbState == READ){
 		switch (read_state){
 			case CAR:
   				len = read_Hreg(&CAR_STA, read_TxFrame[0]);
@@ -989,17 +996,19 @@ void vUART_Read(void *argument)
 				break;
 			case MQTT:
 				len = read_Hreg(&MQTT_STA, read_TxFrame[2]);
-  				HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
+  				//HAL_UART_Transmit(&huart1, read_TxFrame[2], len, RESPONSE_TIMEOUT);
 				read_state = DRIVER;
 				break;
 
 			case DRIVER:
 				len = read_Hreg(&SERVO_DRIVER, read_TxFrame[3]);
-  				HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
+  				//HAL_UART_Transmit(&huart1, read_TxFrame[3], len, RESPONSE_TIMEOUT);
 				read_state = CAR;
+				mbState = WRITE;
 				break;
 			}
-		vTaskDelay(pdMS_TO_TICKS(10));
+		}
+		vTaskDelay(pdMS_TO_TICKS(20));
 	  }
   /* USER CODE END vUART_Read */
 }
@@ -1079,7 +1088,7 @@ void vStartTransit(void *argument)
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     xSemaphoreGiveFromISR(xQueueSem, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-    /* USER CODE END vStartTransit */
+  /* USER CODE END vStartTransit */
 }
 
 /* vReach function */
