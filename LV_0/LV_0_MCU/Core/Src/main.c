@@ -63,6 +63,11 @@ typedef enum{
 }direction;
 
 typedef enum{
+	MOVING,
+	STAY
+}curr_action;
+
+typedef enum{
 	READ,
 	WRITE,
 	WAIT
@@ -86,7 +91,7 @@ typedef struct{
 }transitReq;
 
 typedef struct{
-	uint8_t request[32];
+	uint8_t request[8];
 	uint8_t front;
 	uint8_t rear;
 }SERVE_QUEUE;
@@ -96,6 +101,7 @@ typedef struct{
 	uint8_t min_fl;
 	uint8_t pos;
 	direction dir;
+	curr_action action;
 }ELEVATOR_CAR;
 
 NewSlave CAR_STA = {
@@ -133,12 +139,17 @@ NewSlave SERVO_DRIVER = {
 SERVE_QUEUE queue_UP;
 SERVE_QUEUE queue_DW;
 transaction_t mbState = READ;
+
 uint8_t curr_transit_to;
+uint32_t lastTimeCAR = 0;
+uint32_t lastTimeHALL = 0;
+
 ELEVATOR_CAR cabin_1 = {
 		.max_fl = 8,
 		.min_fl = 1,
 		.pos = 1,
-		.dir = IDLE
+		.dir = IDLE,
+		.action = STAY
 };
 
 /* USER CODE END PTD */
@@ -148,7 +159,7 @@ ELEVATOR_CAR cabin_1 = {
 #define FRAME_SIZE 32
 #define RESPONSE_TIMEOUT 20
 #define QUEUE_SIZE 32
-
+#define DEBOUNCE_MS 1000
 //servo macro
 //#define SERVO_ON(obj) (obj).on(&(obj))
 //#define SERV0_ROTATE(obj, dir) (obj).rotate(&(obj), dir, (obj).speed)
@@ -394,7 +405,7 @@ int isEmpty(SERVE_QUEUE *queue){
 int enqueue(transitReq task, SERVE_QUEUE *queue) {
     if(isFull(queue)) return 0;
 
-    //int next = queue->rear + 1;
+//    int queue->rear = queue->rear + 1;
     queue->request[queue->rear] = task.target;
     queue->rear = (queue->rear+1) % QUEUE_SIZE;
     return 1;
@@ -403,6 +414,8 @@ int enqueue(transitReq task, SERVE_QUEUE *queue) {
 int dequeue(SERVE_QUEUE *queue) {
 	if(isEmpty(queue)) return 0;
 //    queue->request[queue->front] = queue->request[queue->front+1];
+//    queue->request[queue->front] = (queue->front + 1) % QUEUE_SIZE;
+//    queue->request[queue->front-1] = 0;
     queue->front = (queue->front + 1) % QUEUE_SIZE;
     return 1;
 }
@@ -424,17 +437,36 @@ int dequeue(SERVE_QUEUE *queue) {
 //	return 1;
 //}
 
-void sortByProximity(uint8_t arr[], uint8_t pos) {
-    uint8_t n = QUEUE_SIZE;
-    uint8_t i, j, temp;
-    for (i = 0; i < n - 1; i++) {
-        for (j = 0; j < n - i - 1; j++) {
-        	int diff1 = abs(arr[j] - pos);
-        	int diff2 = abs(arr[j + 1] - pos);
+//void sortByProximity(uint8_t arr[], uint8_t pos) {
+//    uint8_t n = QUEUE_SIZE;
+//    uint8_t i, j, temp;
+//    for (i = 0; i < n - 1; i++) {
+//        for (j = 0; j < n - i - 1; j++) {
+//        	int diff1 = abs(arr[j] - pos);
+//        	int diff2 = abs(arr[j + 1] - pos);
+//            if (diff1 > diff2) {
+//                temp = arr[j];
+//                arr[j] = arr[j + 1];
+//                arr[j + 1] = temp;
+//            }
+//        }
+//    }
+//}
+void sortByProximity(SERVE_QUEUE *queue, uint8_t pos) {
+    int count = (queue->rear >= queue->front)
+                ? (queue->rear - queue->front)
+                : (QUEUE_SIZE - queue->front + queue->rear);
+
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = 0; j < count - i - 1; j++) {
+            int idx1 = (queue->front + j) % QUEUE_SIZE;
+            int idx2 = (queue->front + j + 1) % QUEUE_SIZE;
+            int diff1 = abs(queue->request[idx1] - pos);
+            int diff2 = abs(queue->request[idx2] - pos);
             if (diff1 > diff2) {
-                temp = arr[j];
-                arr[j] = arr[j + 1];
-                arr[j + 1] = temp;
+                uint8_t temp = queue->request[idx1];
+                queue->request[idx1] = queue->request[idx2];
+                queue->request[idx2] = temp;
             }
         }
     }
@@ -449,11 +481,18 @@ int elevatorQueueManage(ELEVATOR_CAR *car, transitReq task, SERVE_QUEUE *up, SER
 
 	if(task.dir == UP){
 		enqueue(task, up);
-		sortByProximity(up->request, car->pos);
+		//sortByProximity(up->request, car->pos);
+		sortByProximity(up, car->pos);
+		//curr_transit_to = up.request[up.front];
+
 	}else{
 		enqueue(task, dw);
-		sortByProximity(dw->request, car->pos);
+//		sortByProximity(dw->request, car->pos);
+		sortByProximity(dw, car->pos);
+		//curr_transit_to = dw.request[dw.front];
+
 	}
+
 
 	return 1;
 }
@@ -794,7 +833,7 @@ void vServeQueue(void *argument)
 		    {
 				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
 					if(elevatorQueueManage(&cabin_1, request, &queue_UP, &queue_DW)){
-		                if(cabin_1.dir == IDLE){
+		                if(cabin_1.action == STAY){
 		                	osTimerStart(xStartTransitTimerHandle, 6000);
 		                }
 		                else osTimerStart(xStartTransitTimerHandle, 500);
@@ -807,7 +846,6 @@ void vServeQueue(void *argument)
 		if(xSemaphoreTake(xTransitDoneSem, portMAX_DELAY) == pdTRUE)
 			{
 				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
-
 					direction curr_dir = cabin_1.dir;
 					switch (curr_dir){
 					case IDLE:
@@ -823,20 +861,21 @@ void vServeQueue(void *argument)
 					if(!isEmpty(&queue_UP) || !isEmpty(&queue_DW)){
 
 						if((isEmpty(&queue_UP) == 0) && (curr_dir == UP)){
-							curr_transit_to = queue_UP.request[0];
+							curr_transit_to = queue_UP.request[queue_UP.front];
 			                xSemaphoreGive(xQueueSem);
 
 						}else if((isEmpty(&queue_UP) == 1) && (curr_dir == UP)){
 							if(!isEmpty(&queue_DW)) cabin_1.dir = DOWN;
 
 						}else if((isEmpty(&queue_DW) == 0) && (curr_dir == DOWN)){
-							curr_transit_to = queue_DW.request[0];
+							curr_transit_to = queue_DW.request[queue_DW.front];
 			                xSemaphoreGive(xQueueSem);
 
 						}else if((isEmpty(&queue_DW) == 1) && (curr_dir == DOWN)){
 							if(!isEmpty(&queue_UP)) cabin_1.dir = UP;
 						}
 					}else{
+						cabin_1.action = MOVING;
 						cabin_1.dir = IDLE;
 					}
 		            xSemaphoreGive(xQueueMutex);
@@ -862,7 +901,7 @@ void vTransit(void *argument)
   {
 	  if(xSemaphoreTake(xQueueSem, portMAX_DELAY) == pdTRUE){
 		  if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
-			  dest  = curr_transit_to;
+			  //dest  = curr_transit_to;
 		      xSemaphoreGive(xQueueMutex);
 		  }
 
@@ -1034,6 +1073,7 @@ void vProcess(void *argument)
   //int car_aiming[16] = {0};
   for(;;)
   {
+	  uint32_t now = HAL_GetTick();
       /* --- Hall UP --- */
 	  uint16_t val_up = (read_RxFrame[2][5] << 8) | read_RxFrame[2][6];
       extractBits(val_up, hall_calling_UP, cabin_1.max_fl);
@@ -1073,9 +1113,13 @@ void vProcess(void *argument)
 		 for(int i = 1; i<=8; i++){
 			 if(car_aiming[i] == 1){
 				 request.target = i;
-				 request.dir = DIR(cabin_1.pos, i); //macro
+				 request.dir = DIR(cabin_1.pos, i);
 				 request.requestBy = CABIN;
-				 xQueueSend(xServe_QueueHandle, &request, 0);
+
+				 if(now - lastTimeCAR > DEBOUNCE_MS){
+					 lastTimeCAR = now;
+				     xQueueSend(xServe_QueueHandle, &request, 0);
+				 }
 			 }
 		 }
 	  }
@@ -1090,6 +1134,7 @@ void vStartTransit(void *argument)
 {
   /* USER CODE BEGIN vStartTransit */
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    cabin_1.action = MOVING;
     xSemaphoreGiveFromISR(xQueueSem, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
   /* USER CODE END vStartTransit */
@@ -1100,6 +1145,7 @@ void vReach(void *argument)
 {
   /* USER CODE BEGIN vReach */
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    cabin_1.pos = curr_transit_to;
     xSemaphoreGiveFromISR(xTransitDoneSem, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
   /* USER CODE END vReach */
