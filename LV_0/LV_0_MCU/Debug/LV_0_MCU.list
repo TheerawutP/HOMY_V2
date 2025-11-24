@@ -37,15 +37,15 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   CONTENTS, READONLY, DEBUGGING, OCTETS
  16 .debug_macro  000034c4  00000000  00000000  00028ca7  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_line   00018544  00000000  00000000  0002c16b  2**0
+ 17 .debug_line   0001854a  00000000  00000000  0002c16b  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_str    000db915  00000000  00000000  000446af  2**0
+ 18 .debug_str    000db91c  00000000  00000000  000446b5  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .comment      00000043  00000000  00000000  0011ffc4  2**0
+ 19 .comment      00000043  00000000  00000000  0011ffd1  2**0
                   CONTENTS, READONLY
- 20 .debug_frame  00005da0  00000000  00000000  00120008  2**2
+ 20 .debug_frame  00005da0  00000000  00000000  00120014  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 21 .debug_line_str 0000006c  00000000  00000000  00125da8  2**0
+ 21 .debug_line_str 0000006c  00000000  00000000  00125db4  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -2878,18 +2878,21 @@ void vProcess(void *argument)
  8001566:	2301      	movs	r3, #1
  8001568:	f887 3070 	strb.w	r3, [r7, #112]	@ 0x70
 
-				 if(now - lastTimeCAR > DEBOUNCE_MS){
- 800156c:	4b11      	ldr	r3, [pc, #68]	@ (80015b4 <vProcess+0x130>)
- 800156e:	681b      	ldr	r3, [r3, #0]
- 8001570:	6fba      	ldr	r2, [r7, #120]	@ 0x78
- 8001572:	1ad3      	subs	r3, r2, r3
- 8001574:	f5b3 7f7a 	cmp.w	r3, #1000	@ 0x3e8
- 8001578:	d90a      	bls.n	8001590 <vProcess+0x10c>
-					 lastTimeCAR = now;
- 800157a:	4a0e      	ldr	r2, [pc, #56]	@ (80015b4 <vProcess+0x130>)
- 800157c:	6fbb      	ldr	r3, [r7, #120]	@ 0x78
- 800157e:	6013      	str	r3, [r2, #0]
-				     xQueueSend(xServe_QueueHandle, &request, 0);
+//				 if(now - lastTimeCAR > DEBOUNCE_MS){
+//					 lastTimeCAR = now;
+//				     xQueueSend(xServe_QueueHandle, &request, 0);
+//				 }
+				 if(lastTarget_CAR != request.target){
+ 800156c:	f897 206f 	ldrb.w	r2, [r7, #111]	@ 0x6f
+ 8001570:	4b10      	ldr	r3, [pc, #64]	@ (80015b4 <vProcess+0x130>)
+ 8001572:	781b      	ldrb	r3, [r3, #0]
+ 8001574:	429a      	cmp	r2, r3
+ 8001576:	d00b      	beq.n	8001590 <vProcess+0x10c>
+					 lastTarget_CAR = request.target;
+ 8001578:	f897 206f 	ldrb.w	r2, [r7, #111]	@ 0x6f
+ 800157c:	4b0d      	ldr	r3, [pc, #52]	@ (80015b4 <vProcess+0x130>)
+ 800157e:	701a      	strb	r2, [r3, #0]
+					 xQueueSend(xServe_QueueHandle, &request, 0);
  8001580:	4b0d      	ldr	r3, [pc, #52]	@ (80015b8 <vProcess+0x134>)
  8001582:	6818      	ldr	r0, [r3, #0]
  8001584:	f107 016c 	add.w	r1, r7, #108	@ 0x6c

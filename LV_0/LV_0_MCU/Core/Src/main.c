@@ -141,8 +141,9 @@ SERVE_QUEUE queue_DW;
 transaction_t mbState = READ;
 
 uint8_t curr_transit_to;
+
+uint8_t lastTarget_CAR = 0;
 uint32_t lastTimeCAR = 0;
-uint32_t lastTimeHALL = 0;
 
 ELEVATOR_CAR cabin_1 = {
 		.max_fl = 8,
@@ -1116,9 +1117,13 @@ void vProcess(void *argument)
 				 request.dir = DIR(cabin_1.pos, i);
 				 request.requestBy = CABIN;
 
-				 if(now - lastTimeCAR > DEBOUNCE_MS){
-					 lastTimeCAR = now;
-				     xQueueSend(xServe_QueueHandle, &request, 0);
+//				 if(now - lastTimeCAR > DEBOUNCE_MS){
+//					 lastTimeCAR = now;
+//				     xQueueSend(xServe_QueueHandle, &request, 0);
+//				 }
+				 if(lastTarget_CAR != request.target){
+					 lastTarget_CAR = request.target;
+					 xQueueSend(xServe_QueueHandle, &request, 0);
 				 }
 			 }
 		 }
