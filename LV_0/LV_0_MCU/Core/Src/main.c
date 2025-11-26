@@ -63,14 +63,14 @@ typedef enum{
 }direction;
 
 typedef enum{
-	MOVING,
-	STAY
+	STAY,
+	MOVING
 }curr_action;
 
 typedef enum{
+	WAIT,
 	READ,
-	WRITE,
-	WAIT
+	WRITE
 }transaction_t;
 
 //typedef struct{
@@ -145,6 +145,8 @@ uint8_t curr_transit_to;
 uint8_t lastTarget_CAR = 0;
 uint32_t lastTimeCAR = 0;
 
+int x,y,z,xx;
+
 ELEVATOR_CAR cabin_1 = {
 		.max_fl = 8,
 		.min_fl = 1,
@@ -161,6 +163,7 @@ ELEVATOR_CAR cabin_1 = {
 #define RESPONSE_TIMEOUT 20
 #define QUEUE_SIZE 32
 #define DEBOUNCE_MS 1000
+
 //servo macro
 //#define SERVO_ON(obj) (obj).on(&(obj))
 //#define SERV0_ROTATE(obj, dir) (obj).rotate(&(obj), dir, (obj).speed)
@@ -188,14 +191,14 @@ const osThreadAttr_t ParsingTask_attributes = {
 osThreadId_t ServeQueueTaskHandle;
 const osThreadAttr_t ServeQueueTask_attributes = {
   .name = "ServeQueueTask",
-  .stack_size = 512 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for TransitTask */
 osThreadId_t TransitTaskHandle;
 const osThreadAttr_t TransitTask_attributes = {
   .name = "TransitTask",
-  .stack_size = 256 * 4,
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for UART_WriteTask */
@@ -230,12 +233,13 @@ const osTimerAttr_t xReachTimer_attributes = {
   .name = "xReachTimer"
 };
 /* USER CODE BEGIN PV */
-uint8_t RxData[32] = {0};
-uint8_t read_TxFrame[32][32] = {0};
-uint8_t write_TxFrame[32][32] = {0};
-uint8_t read_RxFrame[32][32] = {0};
-uint16_t CAR_TxFrame[32] = {0};
-uint16_t HALL_TxFrame[32] = {0};
+uint8_t RxData[16] = {0};
+uint8_t read_TxFrame[16][16] = {0};
+uint8_t write_TxFrame[16][16] = {0};
+uint8_t read_RxFrame[16][16] = {0};
+uint16_t CAR_TxFrame[16] = {0};
+uint16_t HALL_TxFrame[16] = {0};
+uint16_t floorDetect = -1;
 
 current_slave read_state = CAR;
 current_slave write_state = CAR;
@@ -556,10 +560,10 @@ int main(void)
 
   /* Create the timer(s) */
   /* creation of xStartTransitTimer */
-  xStartTransitTimerHandle = osTimerNew(vStartTransit, osTimerOnce, NULL, &xStartTransitTimer_attributes);
+  xStartTransitTimerHandle = osTimerNew(vStartTransit,  osTimerOnce, NULL, &xStartTransitTimer_attributes);
 
   /* creation of xReachTimer */
-  xReachTimerHandle = osTimerNew(vReach, osTimerOnce, NULL, &xReachTimer_attributes);
+  xReachTimerHandle = osTimerNew(vReach,  osTimerOnce, NULL, &xReachTimer_attributes);
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
@@ -745,6 +749,9 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, EN_Pin|FR_Pin|BRK_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
@@ -757,6 +764,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : EN_Pin FR_Pin BRK_Pin */
+  GPIO_InitStruct.Pin = EN_Pin|FR_Pin|BRK_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -835,9 +849,15 @@ void vServeQueue(void *argument)
 				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
 					if(elevatorQueueManage(&cabin_1, request, &queue_UP, &queue_DW)){
 		                if(cabin_1.action == STAY){
+		                	x = 11;
+		                	if(cabin_1.dir == UP) curr_transit_to = queue_UP.request[queue_UP.front];
+			                if(cabin_1.dir == DOWN) curr_transit_to = queue_DW.request[queue_DW.front];
 		                	osTimerStart(xStartTransitTimerHandle, 6000);
 		                }
-		                else osTimerStart(xStartTransitTimerHandle, 500);
+		                else{
+		                	x = 10;
+		                	osTimerStart(xStartTransitTimerHandle, 500);
+		                }
 					}
 		            xSemaphoreGive(xQueueMutex);
 				}
@@ -855,12 +875,15 @@ void vServeQueue(void *argument)
 						dequeue(&queue_UP);
 						break;
 					case DOWN:
+						xx = 20;
 						dequeue(&queue_DW);
 						break;
 					}
-
+					x = 1;
+					y = isEmpty(&queue_UP);
+					z = isEmpty(&queue_DW);
 					if(!isEmpty(&queue_UP) || !isEmpty(&queue_DW)){
-
+					x = 2;
 						if((isEmpty(&queue_UP) == 0) && (curr_dir == UP)){
 							curr_transit_to = queue_UP.request[queue_UP.front];
 			                xSemaphoreGive(xQueueSem);
@@ -876,7 +899,8 @@ void vServeQueue(void *argument)
 							if(!isEmpty(&queue_UP)) cabin_1.dir = UP;
 						}
 					}else{
-						cabin_1.action = MOVING;
+					x = 3;
+						cabin_1.action = STAY;
 						cabin_1.dir = IDLE;
 					}
 		            xSemaphoreGive(xQueueMutex);
@@ -897,18 +921,21 @@ void vTransit(void *argument)
 {
   /* USER CODE BEGIN vTransit */
   /* Infinite loop */
-  uint8_t dest;
+//  uint8_t dest;
   for(;;)
   {
 	  if(xSemaphoreTake(xQueueSem, portMAX_DELAY) == pdTRUE){
-		  if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
-			  //dest  = curr_transit_to;
-		      xSemaphoreGive(xQueueMutex);
-		  }
+//		  if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
+//			  dest  = curr_transit_to;
+//		      xSemaphoreGive(xQueueMutex);
+//		  }
 
-
+		  if(cabin_1.dir == UP) HAL_GPIO_WritePin(FR_GPIO_Port, FR_Pin, GPIO_PIN_SET);
+		  if(cabin_1.dir == DOWN) HAL_GPIO_WritePin(FR_GPIO_Port, FR_Pin, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
 		   //mocking cabin transit
-		  osTimerStart(xReachTimerHandle, 5000);
+//		  osTimerStart(xReachTimerHandle, 5000);
+
 
 		  //xSemaphoreGive(xTransitDoneSem); //done transit flag
 	  }
@@ -1072,9 +1099,11 @@ void vProcess(void *argument)
   uint16_t hall_calling_UP[16] = {0};
   int hall_calling_DW[16] = {0};
   //int car_aiming[16] = {0};
+//  uint16_t floorDetect;
   for(;;)
   {
 	  uint32_t now = HAL_GetTick();
+
       /* --- Hall UP --- */
 	  uint16_t val_up = (read_RxFrame[2][5] << 8) | read_RxFrame[2][6];
       extractBits(val_up, hall_calling_UP, cabin_1.max_fl);
@@ -1087,7 +1116,36 @@ void vProcess(void *argument)
       val_car = (read_RxFrame[1][5] << 8) | read_RxFrame[1][6];
       extractBits(val_car, car_aiming, cabin_1.max_fl);
 
+      floorDetect = (read_RxFrame[1][3] << 8) | read_RxFrame[1][4];  //floor sensor detect
+      floorDetect = floorDetect >> 5;
+      switch (floorDetect){
+      	  case 0:
+      	  	break;
 
+      	  case 1:
+    		cabin_1.pos = 1;
+      		if(curr_transit_to == 1){
+      			curr_transit_to = 0;
+      			xSemaphoreGive(xTransitDoneSem);
+      		}
+      		break;
+
+      	  case 2:
+  			cabin_1.pos = 2;
+      		if(curr_transit_to == 2){
+      			curr_transit_to = 0;
+    			xSemaphoreGive(xTransitDoneSem);
+    		}
+      		break;
+
+      	  case 3:
+    		cabin_1.pos = 3;
+      		if(curr_transit_to == 3){
+      			curr_transit_to = 0;
+        		xSemaphoreGive(xTransitDoneSem);
+        	}
+      		break;
+      }
 //	  if(hall_calling_UP[0] == 1){
 //		 for(int i = 1; i<=8; i++){
 //			 if(hall_calling_UP[i] == 1){
@@ -1110,6 +1168,7 @@ void vProcess(void *argument)
 //		 }
 //	  }
 //
+
 	  if(car_aiming[0] == 1){
 		 for(int i = 1; i<=8; i++){
 			 if(car_aiming[i] == 1){
@@ -1150,7 +1209,6 @@ void vReach(void *argument)
 {
   /* USER CODE BEGIN vReach */
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    cabin_1.pos = curr_transit_to;
     xSemaphoreGiveFromISR(xTransitDoneSem, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
   /* USER CODE END vReach */
