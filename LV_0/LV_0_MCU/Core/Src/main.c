@@ -144,6 +144,10 @@ uint8_t curr_transit_to;
 
 uint8_t lastTarget_CAR = 0;
 uint32_t lastTimeCAR = 0;
+uint8_t UP_lastTarget_HALL = 0;
+uint32_t UP_lastTimeHALL = 0;
+uint8_t DW_lastTarget_HALL = 0;
+uint32_t DW_lastTimeHALL = 0;
 
 int x,y,z,xx;
 
@@ -234,11 +238,11 @@ const osTimerAttr_t xReachTimer_attributes = {
 };
 /* USER CODE BEGIN PV */
 uint8_t RxData[16] = {0};
-uint8_t read_TxFrame[16][16] = {0};
-uint8_t write_TxFrame[16][16] = {0};
-uint8_t read_RxFrame[16][16] = {0};
-uint16_t CAR_TxFrame[16] = {0};
-uint16_t HALL_TxFrame[16] = {0};
+uint8_t read_TxFrame[8][16] = {0};
+uint8_t write_TxFrame[8][16] = {0};
+uint8_t read_RxFrame[8][16] = {0};
+uint16_t CAR_TxFrame[8] = {0};
+uint16_t HALL_TxFrame[8] = {0};
 uint16_t floorDetect = -1;
 
 current_slave read_state = CAR;
@@ -246,7 +250,8 @@ current_slave write_state = CAR;
 
 int car_aiming[16] = {0};
 int val_car;
-
+int val_up;
+int val_dw;
 
 QueueHandle_t xUART_QueueHandle;
 QueueHandle_t xServe_QueueHandle;
@@ -1096,7 +1101,7 @@ void vProcess(void *argument)
   /* USER CODE BEGIN vProcess */
   /* Infinite loop */
   transitReq request;
-  uint16_t hall_calling_UP[16] = {0};
+  int hall_calling_UP[16] = {0};
   int hall_calling_DW[16] = {0};
   //int car_aiming[16] = {0};
 //  uint16_t floorDetect;
@@ -1105,11 +1110,11 @@ void vProcess(void *argument)
 	  uint32_t now = HAL_GetTick();
 
       /* --- Hall UP --- */
-	  uint16_t val_up = (read_RxFrame[2][5] << 8) | read_RxFrame[2][6];
+	  val_up = (read_RxFrame[2][5] << 8) | read_RxFrame[2][6];
       extractBits(val_up, hall_calling_UP, cabin_1.max_fl);
 
       /* --- Hall DOWN --- */
-      uint16_t val_dw = (read_RxFrame[2][7] << 8) | read_RxFrame[2][8];
+      val_dw = (read_RxFrame[2][7] << 8) | read_RxFrame[2][8];
       extractBits(val_dw, hall_calling_DW, cabin_1.max_fl);
 
       /* --- Car Aiming --- */
@@ -1146,28 +1151,36 @@ void vProcess(void *argument)
         	}
       		break;
       }
+
 //	  if(hall_calling_UP[0] == 1){
-//		 for(int i = 1; i<=8; i++){
-//			 if(hall_calling_UP[i] == 1){
-//				 request.target = i;
-//				 request.dir = UP;
-//				 request.requestBy = HALL_UI;
-//				 xQueueSend(xServe_QueueHandle, &request, 0);
-//			 }
-//		 }
-//	  }
-//
+	  if(val_up > 0){
+		 for(int i = 1; i<=8; i++){
+			 if(hall_calling_UP[i] == 1){
+				 request.target = i;
+				 request.dir = UP;
+				 request.requestBy = HALL_UI;
+				 if(UP_lastTarget_HALL != request.target){
+					 UP_lastTarget_HALL = request.target;
+					 xQueueSend(xServe_QueueHandle, &request, 0);
+				 }
+			 }
+		 }
+	  }
+
 //	  if(hall_calling_DW[0] == 1){
-//		 for(int i = 1; i<=8; i++){
-//			 if(hall_calling_DW[i] == 1){
-//				 request.target = i;
-//				 request.dir = DOWN;
-//				 request.requestBy = HALL_UI;
-//				 xQueueSend(xServe_QueueHandle, &request, 0);
-//			 }
-//		 }
-//	  }
-//
+	  if(val_dw > 0){
+		 for(int i = 1; i<=8; i++){
+			 if(hall_calling_DW[i] == 1){
+				 request.target = i;
+				 request.dir = DOWN;
+				 request.requestBy = HALL_UI;
+				 if(DW_lastTarget_HALL != request.target){
+					 DW_lastTarget_HALL = request.target;
+					 xQueueSend(xServe_QueueHandle, &request, 0);
+				 }
+			 }
+		 }
+	  }
 
 	  if(car_aiming[0] == 1){
 		 for(int i = 1; i<=8; i++){
