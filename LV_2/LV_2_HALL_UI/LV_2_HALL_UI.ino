@@ -112,7 +112,6 @@ void writeBit(uint16_t &value, uint8_t bit, bool state) {
 }
 
 void ISR_CALL_UP() {
-
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   xTaskNotifyFromISR(
       xCallingButtonTaskHandle,
@@ -124,7 +123,6 @@ void ISR_CALL_UP() {
 }
 
 void ISR_CALL_DW() {
-
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   xTaskNotifyFromISR(
       xCallingButtonTaskHandle,
@@ -157,11 +155,6 @@ void vModbusComTask(void *pvParam){
   parsing_data[10] = (val & 0x0400) != 0;            
   parsing_data[11] = (val & 0x0800) != 0;            
   parsing_data[12] = (val & 0x1000) != 0;   
-  // if(parsing_data[10] == 1){
-  //       Serial.print("response time: ");
-  //       Serial.println(millis()-response_time);
-  // }
-
   xQueueSend(xProcessQueue, parsing_data, 0);
   vTaskDelay(pdMS_TO_TICKS(10));
   }
@@ -219,18 +212,20 @@ void vCallingButtonTask(void *pvParam){
             if(val == SW_UP){
                 writeBit(package, 9, 1);
                 RTU_SLAVE.Hreg(1, package);   
+                if(digitalRead(SW_UP) == LOW) digitalWrite(DW_LAMP, HIGH);
                 xTimerStart(xClearStateTimer, 0);        
             }
 
             if(val == SW_DW){
                 writeBit(package, 10, 1);
-                RTU_SLAVE.Hreg(1, package);    
+                RTU_SLAVE.Hreg(1, package);                                  
+                if(digitalRead(SW_DW) == LOW) digitalWrite(DW_LAMP, HIGH);
                 xTimerStart(xClearStateTimer, 0);               
             }
 
 
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -249,6 +244,8 @@ void vClearStateCallback(TimerHandle_t xTimer) {
     // if(digitalRead(SW_DW) == HIGH){
     //   writeBit(package, 10, 0);
     // }
+    digitalWrite(PB_UP_LAMP, LOW);
+    digitalWrite(PB_DW_LAMP, LOW);
     writeBit(package, 9, 0);
     writeBit(package, 10, 0);
     RTU_SLAVE.Hreg(1, package);
