@@ -91,7 +91,8 @@ typedef struct{
 }transitReq;
 
 typedef struct{
-	uint8_t request[8];
+	//uint8_t request[8];
+	transitReq request[8];
 	uint8_t front;
 	uint8_t rear;
 }SERVE_QUEUE;
@@ -426,7 +427,7 @@ int enqueue(transitReq task, SERVE_QUEUE *queue) {
     if(isFull(queue)) return 0;
 
 //    int queue->rear = queue->rear + 1;
-    queue->request[queue->rear] = task.target;
+    queue->request[queue->rear].target = task.target;
     queue->rear = (queue->rear+1) % QUEUE_SIZE;
     return 1;
 }
@@ -481,12 +482,12 @@ void sortByProximity(SERVE_QUEUE *queue, uint8_t pos) {
         for (int j = 0; j < count - i - 1; j++) {
             int idx1 = (queue->front + j) % QUEUE_SIZE;
             int idx2 = (queue->front + j + 1) % QUEUE_SIZE;
-            int diff1 = abs(queue->request[idx1] - pos);
-            int diff2 = abs(queue->request[idx2] - pos);
+            int diff1 = abs(queue->request[idx1].target - pos);
+            int diff2 = abs(queue->request[idx2].target - pos);
             if (diff1 > diff2) {
-                uint8_t temp = queue->request[idx1];
-                queue->request[idx1] = queue->request[idx2];
-                queue->request[idx2] = temp;
+                uint8_t temp = queue->request[idx1].target;
+                queue->request[idx1].target = queue->request[idx2].target;
+                queue->request[idx2].target = temp;
             }
         }
     }
@@ -870,8 +871,8 @@ void vServeQueue(void *argument)
 					if(elevatorQueueManage(&cabin_1, request, &queue_UP, &queue_DW)){
 		                if(cabin_1.action == STAY){
 		                	x = 10;
-		                	if(cabin_1.dir == UP) curr_transit_to = queue_UP.request[queue_UP.front];
-			                if(cabin_1.dir == DOWN) curr_transit_to = queue_DW.request[queue_DW.front];
+		                	if(cabin_1.dir == UP) curr_transit_to = queue_UP.request[queue_UP.front].target;
+			                if(cabin_1.dir == DOWN) curr_transit_to = queue_DW.request[queue_DW.front].target;
 		                	osTimerStart(xStartTransitTimerHandle, 6000);
 		                }
 		                else{
@@ -965,6 +966,9 @@ void vUART_Write(void *argument)
 	  	uint8_t pos_b2 = (cabin_1.pos>>2) & 1;
 	  	uint8_t pos_b3 = (cabin_1.pos>>3) & 1;
 
+//	  	uint8_t WaitFromCar_1 = (CarReq)
+
+
 	  	if(mbState == WRITE){
 		switch (write_state){
 			case CAR:
@@ -976,6 +980,16 @@ void vUART_Write(void *argument)
 				writeBit(&CAR_TxFrame[0], 7, pos_b1);
 				writeBit(&CAR_TxFrame[0], 8, pos_b2);
 				writeBit(&CAR_TxFrame[0], 9, pos_b3);
+
+//				writeBit(&CAR_TxFrame[1], 0, WaitFromCar_1);
+//				writeBit(&CAR_TxFrame[1], 1, WaitFromCar_2);
+//				writeBit(&CAR_TxFrame[1], 2, WaitFromCar_3);
+//				writeBit(&CAR_TxFrame[1], 3, WaitFromCar_4);
+//				writeBit(&CAR_TxFrame[1], 4, WaitFromCar_5);
+//				writeBit(&CAR_TxFrame[1], 5, WaitFromCar_6);
+//				writeBit(&CAR_TxFrame[1], 6, WaitFromCar_7);
+//				writeBit(&CAR_TxFrame[1], 7, WaitFromCar_8);
+
 
 				len = write_MultipleHreg(&CAR_STA, CAR_TxFrame, write_TxFrame[0]);
 				HAL_UART_Transmit(&huart1, write_TxFrame[0], len, RESPONSE_TIMEOUT);
@@ -1106,7 +1120,7 @@ void vProcess(void *argument)
       	  case 1:
     		cabin_1.pos = 1;
       		if(curr_transit_to == 1){
-//      			curr_transit_to = 0;
+      			curr_transit_to = 0;
       			y = 20;
       			xSemaphoreGive(xTransitDoneSem);
       		}
@@ -1115,7 +1129,7 @@ void vProcess(void *argument)
       	  case 2:
   			cabin_1.pos = 2;
       		if(curr_transit_to == 2){
-//      			curr_transit_to = 0;
+      			curr_transit_to = 0;
       			y = 20;
     			xSemaphoreGive(xTransitDoneSem);
     		}
@@ -1124,7 +1138,7 @@ void vProcess(void *argument)
       	  case 3:
     		cabin_1.pos = 3;
       		if(curr_transit_to == 3){
-//      			curr_transit_to = 0;
+      			curr_transit_to = 0;
       			y = 20;
         		xSemaphoreGive(xTransitDoneSem);
         	}
@@ -1225,14 +1239,14 @@ void vStopper(void *argument)
 
 					if(!isEmpty(&queue_UP) || !isEmpty(&queue_DW)){
 						if((isEmpty(&queue_UP) == 0) && (curr_dir == UP)){
-							curr_transit_to = queue_UP.request[queue_UP.front];
+							curr_transit_to = queue_UP.request[queue_UP.front].target;
 			                xSemaphoreGive(xQueueSem);
 
 						}else if((isEmpty(&queue_UP) == 1) && (curr_dir == UP)){
 							if(!isEmpty(&queue_DW)) cabin_1.dir = DOWN;
 
 						}else if((isEmpty(&queue_DW) == 0) && (curr_dir == DOWN)){
-							curr_transit_to = queue_DW.request[queue_DW.front];
+							curr_transit_to = queue_DW.request[queue_DW.front].target;
 			                xSemaphoreGive(xQueueSem);
 
 						}else if((isEmpty(&queue_DW) == 1) && (curr_dir == DOWN)){
