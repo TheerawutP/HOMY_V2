@@ -514,6 +514,8 @@ int elevatorQueueManage(ELEVATOR_CAR *car, transitReq task, SERVE_QUEUE *up, SER
 
 	}
 
+	if(cabin_1.dir == UP) curr_transit_to = queue_UP.request[queue_UP.front].target;
+    if(cabin_1.dir == DOWN) curr_transit_to = queue_DW.request[queue_DW.front].target;
 
 	return 1;
 }
@@ -871,8 +873,8 @@ void vServeQueue(void *argument)
 					if(elevatorQueueManage(&cabin_1, request, &queue_UP, &queue_DW)){
 		                if(cabin_1.action == STAY){
 		                	x = 10;
-		                	if(cabin_1.dir == UP) curr_transit_to = queue_UP.request[queue_UP.front].target;
-			                if(cabin_1.dir == DOWN) curr_transit_to = queue_DW.request[queue_DW.front].target;
+//		                	if(cabin_1.dir == UP) curr_transit_to = queue_UP.request[queue_UP.front].target;
+//			                if(cabin_1.dir == DOWN) curr_transit_to = queue_DW.request[queue_DW.front].target;
 		                	osTimerStart(xStartTransitTimerHandle, 6000);
 		                }
 		                else{
