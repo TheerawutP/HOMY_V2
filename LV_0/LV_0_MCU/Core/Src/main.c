@@ -150,6 +150,7 @@ uint8_t UP_lastTarget_HALL = 0;
 uint32_t UP_lastTimeHALL = 0;
 uint8_t DW_lastTarget_HALL = 0;
 uint32_t DW_lastTimeHALL = 0;
+uint8_t requestByCar[8];
 
 int x,y,z,xx, yy,zz;
 
@@ -428,6 +429,8 @@ int enqueue(transitReq task, SERVE_QUEUE *queue) {
 
 //    int queue->rear = queue->rear + 1;
     queue->request[queue->rear].target = task.target;
+    queue->request[queue->rear].requestBy = task.requestBy;
+    if(queue->request[queue->rear].requestBy == CABIN) requestByCar[task.target] = 1;
     queue->rear = (queue->rear+1) % QUEUE_SIZE;
     return 1;
 }
@@ -437,6 +440,7 @@ int dequeue(SERVE_QUEUE *queue) {
 //    queue->request[queue->front] = queue->request[queue->front+1];
 //    queue->request[queue->front] = (queue->front + 1) % QUEUE_SIZE;
 //    queue->request[queue->front-1] = 0;
+	if(queue->request[queue->front].requestBy == CABIN) requestByCar[queue->request[queue->front].target] = 0;
     queue->front = (queue->front + 1) % QUEUE_SIZE;
     return 1;
 }
@@ -968,8 +972,6 @@ void vUART_Write(void *argument)
 	  	uint8_t pos_b2 = (cabin_1.pos>>2) & 1;
 	  	uint8_t pos_b3 = (cabin_1.pos>>3) & 1;
 
-//	  	uint8_t WaitFromCar_1 = (CarReq)
-
 
 	  	if(mbState == WRITE){
 		switch (write_state){
@@ -983,15 +985,14 @@ void vUART_Write(void *argument)
 				writeBit(&CAR_TxFrame[0], 8, pos_b2);
 				writeBit(&CAR_TxFrame[0], 9, pos_b3);
 
-//				writeBit(&CAR_TxFrame[1], 0, WaitFromCar_1);
-//				writeBit(&CAR_TxFrame[1], 1, WaitFromCar_2);
-//				writeBit(&CAR_TxFrame[1], 2, WaitFromCar_3);
-//				writeBit(&CAR_TxFrame[1], 3, WaitFromCar_4);
-//				writeBit(&CAR_TxFrame[1], 4, WaitFromCar_5);
-//				writeBit(&CAR_TxFrame[1], 5, WaitFromCar_6);
-//				writeBit(&CAR_TxFrame[1], 6, WaitFromCar_7);
-//				writeBit(&CAR_TxFrame[1], 7, WaitFromCar_8);
-
+				writeBit(&CAR_TxFrame[1], 0, requestByCar[0]);
+				writeBit(&CAR_TxFrame[1], 1, requestByCar[1]);
+				writeBit(&CAR_TxFrame[1], 2, requestByCar[2]);
+				writeBit(&CAR_TxFrame[1], 3, requestByCar[3]);
+				writeBit(&CAR_TxFrame[1], 4, requestByCar[4]);
+				writeBit(&CAR_TxFrame[1], 5, requestByCar[5]);
+				writeBit(&CAR_TxFrame[1], 6, requestByCar[6]);
+				writeBit(&CAR_TxFrame[1], 7, requestByCar[7]);
 
 				len = write_MultipleHreg(&CAR_STA, CAR_TxFrame, write_TxFrame[0]);
 				HAL_UART_Transmit(&huart1, write_TxFrame[0], len, RESPONSE_TIMEOUT);
