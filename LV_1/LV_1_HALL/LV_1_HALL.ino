@@ -232,7 +232,7 @@ void setup() {
   RTU_SLAVE.onSetHreg(0x0006, cbWrite);
   RTU_SLAVE.onGetHreg(0x0006, cbRead);
 
-  xTaskCreate(vModbusSlaveTask, "SlaveTask", 2048, NULL, 3, NULL);
+  xTaskCreate(vModbusSlaveTask, "SlaveTask", 2048, NULL, 4, NULL);
   xTaskCreate(vModbusMasterTask, "MasterTask", 2048, NULL, 3, NULL);
 }
 
@@ -241,13 +241,16 @@ void loop() {
   // if (time_print - last_time_print >= print_interval) {
   //   last_time_print = time_print;
   //   Serial.println(" ");
-  //   Serial.print("Hreg[4] jog_frame: ");
-  //   Serial.println(RTU_SLAVE.Hreg(4));
-  //   Serial.print("Hreg[5] up_frmae: ");
-  //   Serial.println(RTU_SLAVE.Hreg(5));
-  //   Serial.print("Hreg[6] down_frame: ");
-  //   Serial.println(RTU_SLAVE.Hreg(6));
-  //   Serial.println(" ");
-
+    Serial.println(RTU_SLAVE.Hreg(0));
+    Serial.println(RTU_SLAVE.Hreg(1));
+    Serial.println(RTU_SLAVE.Hreg(2));
+    Serial.print("Hreg[4] jog_frame: ");
+    Serial.println(RTU_SLAVE.Hreg(4));
+    Serial.print("Hreg[5] up_frmae: ");
+    Serial.println(RTU_SLAVE.Hreg(5));
+    Serial.print("Hreg[6] down_frame: ");
+    Serial.println(RTU_SLAVE.Hreg(6));
+    Serial.println("-------------");
+  vTaskDelay(1000);
   // }
 }

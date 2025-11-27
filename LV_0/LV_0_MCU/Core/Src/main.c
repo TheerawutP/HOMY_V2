@@ -138,6 +138,7 @@ NewSlave SERVO_DRIVER = {
 
 SERVE_QUEUE queue_UP;
 SERVE_QUEUE queue_DW;
+transitReq buffReq;
 transaction_t mbState = READ;
 
 uint8_t curr_transit_to;
@@ -260,6 +261,7 @@ SemaphoreHandle_t xQueueMutex;
 SemaphoreHandle_t xUARTMutex;
 SemaphoreHandle_t xTransitDoneSem;
 SemaphoreHandle_t xModbusMutex;
+SemaphoreHandle_t xSemServeQueue;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -524,6 +526,7 @@ int main(void)
   xUARTMutex = xSemaphoreCreateMutex();
   xTransitDoneSem = xSemaphoreCreateBinary();
   xModbusMutex = xSemaphoreCreateMutex();
+  xSemServeQueue = xSemaphoreCreateBinary();
 
   /* USER CODE END 1 */
 
@@ -851,21 +854,21 @@ void vServeQueue(void *argument)
   {
 		if(xQueueReceive(xServe_QueueHandle, &request, portMAX_DELAY) == pdTRUE)
 		    {
-				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
+//	  	request = buffReq;
+//		if(xSemaphoreTake(xSemServeQueue, portMAX_DELAY) == pdTRUE){
+//				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
 					if(elevatorQueueManage(&cabin_1, request, &queue_UP, &queue_DW)){
 		                if(cabin_1.action == STAY){
-		                	x = 11;
 		                	if(cabin_1.dir == UP) curr_transit_to = queue_UP.request[queue_UP.front];
 			                if(cabin_1.dir == DOWN) curr_transit_to = queue_DW.request[queue_DW.front];
 		                	osTimerStart(xStartTransitTimerHandle, 6000);
 		                }
 		                else{
-		                	x = 10;
 		                	osTimerStart(xStartTransitTimerHandle, 500);
 		                }
 					}
-		            xSemaphoreGive(xQueueMutex);
-				}
+//		            xSemaphoreGive(xQueueMutex);
+//				}
 		    }
 
 
@@ -880,15 +883,11 @@ void vServeQueue(void *argument)
 						dequeue(&queue_UP);
 						break;
 					case DOWN:
-						xx = 20;
 						dequeue(&queue_DW);
 						break;
 					}
-					x = 1;
-					y = isEmpty(&queue_UP);
-					z = isEmpty(&queue_DW);
+
 					if(!isEmpty(&queue_UP) || !isEmpty(&queue_DW)){
-					x = 2;
 						if((isEmpty(&queue_UP) == 0) && (curr_dir == UP)){
 							curr_transit_to = queue_UP.request[queue_UP.front];
 			                xSemaphoreGive(xQueueSem);
@@ -904,7 +903,6 @@ void vServeQueue(void *argument)
 							if(!isEmpty(&queue_UP)) cabin_1.dir = UP;
 						}
 					}else{
-					x = 3;
 						cabin_1.action = STAY;
 						cabin_1.dir = IDLE;
 					}
@@ -1100,7 +1098,10 @@ void vProcess(void *argument)
 {
   /* USER CODE BEGIN vProcess */
   /* Infinite loop */
-  transitReq request;
+  transitReq car;
+  transitReq hall_up;
+  transitReq hall_dw;
+
   int hall_calling_UP[16] = {0};
   int hall_calling_DW[16] = {0};
   //int car_aiming[16] = {0};
@@ -1156,12 +1157,16 @@ void vProcess(void *argument)
 	  if(val_up > 0){
 		 for(int i = 1; i<=8; i++){
 			 if(hall_calling_UP[i] == 1){
-				 request.target = i;
-				 request.dir = UP;
-				 request.requestBy = HALL_UI;
-				 if(UP_lastTarget_HALL != request.target){
-					 UP_lastTarget_HALL = request.target;
-					 xQueueSend(xServe_QueueHandle, &request, 0);
+				 hall_up.target = i;
+				 hall_up.dir = UP;
+				 hall_up.requestBy = HALL_UI;
+//				 buffReq.target = i;
+//				 buffReq.dir = UP;
+//				 buffReq.requestBy = HALL_UI;
+				 if(UP_lastTarget_HALL != hall_up.target){
+					 UP_lastTarget_HALL = hall_up.target;
+					 xQueueSend(xServe_QueueHandle, &hall_up, 0);
+//					 xSemaphoreGive(xSemServeQueue);
 				 }
 			 }
 		 }
@@ -1171,12 +1176,14 @@ void vProcess(void *argument)
 	  if(val_dw > 0){
 		 for(int i = 1; i<=8; i++){
 			 if(hall_calling_DW[i] == 1){
-				 request.target = i;
-				 request.dir = DOWN;
-				 request.requestBy = HALL_UI;
-				 if(DW_lastTarget_HALL != request.target){
-					 DW_lastTarget_HALL = request.target;
-					 xQueueSend(xServe_QueueHandle, &request, 0);
+				 hall_dw.target = i;
+				 hall_dw.dir = DOWN;
+				 hall_dw.requestBy = HALL_UI;
+				 if(DW_lastTarget_HALL != hall_dw.target){
+					 DW_lastTarget_HALL = hall_dw.target;
+					 xQueueSend(xServe_QueueHandle, &hall_dw, 0);
+//					 xSemaphoreGive(xSemServeQueue);
+
 				 }
 			 }
 		 }
@@ -1185,17 +1192,20 @@ void vProcess(void *argument)
 	  if(car_aiming[0] == 1){
 		 for(int i = 1; i<=8; i++){
 			 if(car_aiming[i] == 1){
-				 request.target = i;
-				 request.dir = DIR(cabin_1.pos, i);
-				 request.requestBy = CABIN;
-
+				 car.target = i;
+				 car.dir = DIR(cabin_1.pos, i);
+				 car.requestBy = CABIN;
+//				 buffReq.target = i;
+//				 buffReq.dir = DIR(cabin_1.pos, i);
+//				 buffReq.requestBy = CABIN;
 //				 if(now - lastTimeCAR > DEBOUNCE_MS){
 //					 lastTimeCAR = now;
 //				     xQueueSend(xServe_QueueHandle, &request, 0);
 //				 }
-				 if(lastTarget_CAR != request.target){
-					 lastTarget_CAR = request.target;
-					 xQueueSend(xServe_QueueHandle, &request, 0);
+				 if(lastTarget_CAR != car.target){
+					 lastTarget_CAR = car.target;
+					 xQueueSend(xServe_QueueHandle, &car, 0);
+//					 xSemaphoreGive(xSemServeQueue);
 				 }
 			 }
 		 }
