@@ -150,7 +150,7 @@ uint32_t UP_lastTimeHALL = 0;
 uint8_t DW_lastTarget_HALL = 0;
 uint32_t DW_lastTimeHALL = 0;
 
-int x,y,z,xx;
+int x,y,z,xx, yy,zz;
 
 ELEVATOR_CAR cabin_1 = {
 		.max_fl = 8,
@@ -227,6 +227,13 @@ const osThreadAttr_t ProcessTask_attributes = {
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for StopperTask */
+osThreadId_t StopperTaskHandle;
+const osThreadAttr_t StopperTask_attributes = {
+  .name = "StopperTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* Definitions for xStartTransitTimer */
 osTimerId_t xStartTransitTimerHandle;
 const osTimerAttr_t xStartTransitTimer_attributes = {
@@ -275,6 +282,7 @@ void vTransit(void *argument);
 void vUART_Write(void *argument);
 void vUART_Read(void *argument);
 void vProcess(void *argument);
+void vStopper(void *argument);
 void vStartTransit(void *argument);
 void vReach(void *argument);
 
@@ -568,10 +576,10 @@ int main(void)
 
   /* Create the timer(s) */
   /* creation of xStartTransitTimer */
-  xStartTransitTimerHandle = osTimerNew(vStartTransit,  osTimerOnce, NULL, &xStartTransitTimer_attributes);
+  xStartTransitTimerHandle = osTimerNew(vStartTransit, osTimerOnce, NULL, &xStartTransitTimer_attributes);
 
   /* creation of xReachTimer */
-  xReachTimerHandle = osTimerNew(vReach,  osTimerOnce, NULL, &xReachTimer_attributes);
+  xReachTimerHandle = osTimerNew(vReach, osTimerOnce, NULL, &xReachTimer_attributes);
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
@@ -599,6 +607,9 @@ int main(void)
 
   /* creation of ProcessTask */
   ProcessTaskHandle = osThreadNew(vProcess, NULL, &ProcessTask_attributes);
+
+  /* creation of StopperTask */
+  StopperTaskHandle = osThreadNew(vStopper, NULL, &StopperTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -852,18 +863,19 @@ void vServeQueue(void *argument)
   transitReq request;
   for(;;)
   {
-		if(xQueueReceive(xServe_QueueHandle, &request, portMAX_DELAY) == pdTRUE)
-		    {
-//	  	request = buffReq;
+	  	  while(xQueueReceive(xServe_QueueHandle, &request, portMAX_DELAY)){
 //		if(xSemaphoreTake(xSemServeQueue, portMAX_DELAY) == pdTRUE){
+	  		  x = 1;
 //				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
 					if(elevatorQueueManage(&cabin_1, request, &queue_UP, &queue_DW)){
 		                if(cabin_1.action == STAY){
+		                	x = 10;
 		                	if(cabin_1.dir == UP) curr_transit_to = queue_UP.request[queue_UP.front];
 			                if(cabin_1.dir == DOWN) curr_transit_to = queue_DW.request[queue_DW.front];
 		                	osTimerStart(xStartTransitTimerHandle, 6000);
 		                }
 		                else{
+		                	x = 11;
 		                	osTimerStart(xStartTransitTimerHandle, 500);
 		                }
 					}
@@ -871,44 +883,6 @@ void vServeQueue(void *argument)
 //				}
 		    }
 
-
-		if(xSemaphoreTake(xTransitDoneSem, portMAX_DELAY) == pdTRUE)
-			{
-				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
-					direction curr_dir = cabin_1.dir;
-					switch (curr_dir){
-					case IDLE:
-						break;
-					case UP:
-						dequeue(&queue_UP);
-						break;
-					case DOWN:
-						dequeue(&queue_DW);
-						break;
-					}
-
-					if(!isEmpty(&queue_UP) || !isEmpty(&queue_DW)){
-						if((isEmpty(&queue_UP) == 0) && (curr_dir == UP)){
-							curr_transit_to = queue_UP.request[queue_UP.front];
-			                xSemaphoreGive(xQueueSem);
-
-						}else if((isEmpty(&queue_UP) == 1) && (curr_dir == UP)){
-							if(!isEmpty(&queue_DW)) cabin_1.dir = DOWN;
-
-						}else if((isEmpty(&queue_DW) == 0) && (curr_dir == DOWN)){
-							curr_transit_to = queue_DW.request[queue_DW.front];
-			                xSemaphoreGive(xQueueSem);
-
-						}else if((isEmpty(&queue_DW) == 1) && (curr_dir == DOWN)){
-							if(!isEmpty(&queue_UP)) cabin_1.dir = UP;
-						}
-					}else{
-						cabin_1.action = STAY;
-						cabin_1.dir = IDLE;
-					}
-		            xSemaphoreGive(xQueueMutex);
-				}
-			}
   }
   /* USER CODE END vServeQueue */
 }
@@ -932,7 +906,8 @@ void vTransit(void *argument)
 //			  dest  = curr_transit_to;
 //		      xSemaphoreGive(xQueueMutex);
 //		  }
-
+		  z = 1;
+//		  if(cabin_1.pos == curr_transit_to) xSemaphoreGive(xTransitDoneSem);
 		  if(cabin_1.dir == UP) HAL_GPIO_WritePin(FR_GPIO_Port, FR_Pin, GPIO_PIN_SET);
 		  if(cabin_1.dir == DOWN) HAL_GPIO_WritePin(FR_GPIO_Port, FR_Pin, GPIO_PIN_RESET);
 		  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
@@ -1131,7 +1106,8 @@ void vProcess(void *argument)
       	  case 1:
     		cabin_1.pos = 1;
       		if(curr_transit_to == 1){
-      			curr_transit_to = 0;
+//      			curr_transit_to = 0;
+      			y = 20;
       			xSemaphoreGive(xTransitDoneSem);
       		}
       		break;
@@ -1139,7 +1115,8 @@ void vProcess(void *argument)
       	  case 2:
   			cabin_1.pos = 2;
       		if(curr_transit_to == 2){
-      			curr_transit_to = 0;
+//      			curr_transit_to = 0;
+      			y = 20;
     			xSemaphoreGive(xTransitDoneSem);
     		}
       		break;
@@ -1147,7 +1124,8 @@ void vProcess(void *argument)
       	  case 3:
     		cabin_1.pos = 3;
       		if(curr_transit_to == 3){
-      			curr_transit_to = 0;
+//      			curr_transit_to = 0;
+      			y = 20;
         		xSemaphoreGive(xTransitDoneSem);
         	}
       		break;
@@ -1163,7 +1141,7 @@ void vProcess(void *argument)
 //				 buffReq.target = i;
 //				 buffReq.dir = UP;
 //				 buffReq.requestBy = HALL_UI;
-				 if(UP_lastTarget_HALL != hall_up.target){
+				 if((UP_lastTarget_HALL != hall_up.target) && (hall_up.target != cabin_1.pos)){
 					 UP_lastTarget_HALL = hall_up.target;
 					 xQueueSend(xServe_QueueHandle, &hall_up, 0);
 //					 xSemaphoreGive(xSemServeQueue);
@@ -1179,7 +1157,7 @@ void vProcess(void *argument)
 				 hall_dw.target = i;
 				 hall_dw.dir = DOWN;
 				 hall_dw.requestBy = HALL_UI;
-				 if(DW_lastTarget_HALL != hall_dw.target){
+				 if((DW_lastTarget_HALL != hall_dw.target) && (hall_dw.target != cabin_1.pos)){
 					 DW_lastTarget_HALL = hall_dw.target;
 					 xQueueSend(xServe_QueueHandle, &hall_dw, 0);
 //					 xSemaphoreGive(xSemServeQueue);
@@ -1202,7 +1180,7 @@ void vProcess(void *argument)
 //					 lastTimeCAR = now;
 //				     xQueueSend(xServe_QueueHandle, &request, 0);
 //				 }
-				 if(lastTarget_CAR != car.target){
+				 if((lastTarget_CAR != car.target) && (car.target != cabin_1.pos)){
 					 lastTarget_CAR = car.target;
 					 xQueueSend(xServe_QueueHandle, &car, 0);
 //					 xSemaphoreGive(xSemServeQueue);
@@ -1216,12 +1194,69 @@ void vProcess(void *argument)
   /* USER CODE END vProcess */
 }
 
+/* USER CODE BEGIN Header_vStopper */
+/**
+* @brief Function implementing the StopperTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_vStopper */
+void vStopper(void *argument)
+{
+  /* USER CODE BEGIN vStopper */
+  /* Infinite loop */
+  for(;;)
+  {
+		if(xSemaphoreTake(xTransitDoneSem, portMAX_DELAY) == pdTRUE)
+			{
+			y = 1;
+				if(xSemaphoreTake(xQueueMutex, portMAX_DELAY) == pdTRUE){
+					direction curr_dir = cabin_1.dir;
+					switch (curr_dir){
+					case IDLE:
+						break;
+					case UP:
+						dequeue(&queue_UP);
+						break;
+					case DOWN:
+						dequeue(&queue_DW);
+						break;
+					}
+
+					if(!isEmpty(&queue_UP) || !isEmpty(&queue_DW)){
+						if((isEmpty(&queue_UP) == 0) && (curr_dir == UP)){
+							curr_transit_to = queue_UP.request[queue_UP.front];
+			                xSemaphoreGive(xQueueSem);
+
+						}else if((isEmpty(&queue_UP) == 1) && (curr_dir == UP)){
+							if(!isEmpty(&queue_DW)) cabin_1.dir = DOWN;
+
+						}else if((isEmpty(&queue_DW) == 0) && (curr_dir == DOWN)){
+							curr_transit_to = queue_DW.request[queue_DW.front];
+			                xSemaphoreGive(xQueueSem);
+
+						}else if((isEmpty(&queue_DW) == 1) && (curr_dir == DOWN)){
+							if(!isEmpty(&queue_UP)) cabin_1.dir = UP;
+						}
+					}else{
+						y = 3;
+						cabin_1.action = STAY;
+						cabin_1.dir = IDLE;
+					}
+		            xSemaphoreGive(xQueueMutex);
+				}
+			}
+  }
+  /* USER CODE END vStopper */
+}
+
 /* vStartTransit function */
 void vStartTransit(void *argument)
 {
   /* USER CODE BEGIN vStartTransit */
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     cabin_1.action = MOVING;
+    x = 2;
     xSemaphoreGiveFromISR(xQueueSem, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
   /* USER CODE END vStartTransit */
